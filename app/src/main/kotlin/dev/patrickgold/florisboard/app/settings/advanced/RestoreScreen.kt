@@ -81,7 +81,7 @@ import org.florisboard.lib.kotlin.io.subFile
 
 object Restore {
     const val MIN_VERSION_CODE = 64
-    const val PACKAGE_NAME = "dev.patrickgold.florisboard"
+    const val PACKAGE_NAME = "me.jchackett.florisboardtx"
     const val BACKUP_ARCHIVE_FILE_NAME = "backup.zip"
 }
 
