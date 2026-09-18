@@ -88,6 +88,9 @@ fun QuickActionButton(
     // being stuck in the pressed state
     DisposableEffect(action, isEnabled) {
         onDispose {
+            // Deliberately not cancelling QuickAction.Dictate here: a latched recording is
+            // expected to outlive this composable while the user moves between fields. The
+            // manager's own time limit is what bounds it instead.
             if (action is QuickAction.InsertKey) {
                 action.onPointerCancel(context)
             }
