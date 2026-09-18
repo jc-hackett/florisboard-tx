@@ -1,6 +1,7 @@
 name: FlorisBoard CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, "feat/**" ]
     paths-ignore:
