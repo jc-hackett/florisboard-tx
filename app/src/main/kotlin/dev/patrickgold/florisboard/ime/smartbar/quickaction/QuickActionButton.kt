@@ -26,8 +26,14 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import dev.patrickgold.compose.tooltip.PlainTooltip
+import dev.patrickgold.florisboard.dictationManager
+import dev.patrickgold.florisboard.ime.ai.DictationState
 import dev.patrickgold.florisboard.ime.input.LocalInputFeedbackController
 import dev.patrickgold.florisboard.ime.keyboard.ComputingEvaluator
 import dev.patrickgold.florisboard.ime.keyboard.computeImageVector
@@ -121,6 +129,25 @@ fun QuickActionButton(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // Render foreground
                 when (action) {
+                    is QuickAction.Dictate -> {
+                        val dictationManager by context.dictationManager()
+                        val dictationState by dictationManager.state.collectAsState()
+                        SnyggBox(
+                            elementName = "$elementName-icon",
+                            attributes = attributes,
+                            selector = selector,
+                        ) {
+                            SnyggIcon(
+                                imageVector = when (dictationState) {
+                                    DictationState.RECORDING -> Icons.Default.StopCircle
+                                    DictationState.WORKING -> Icons.Default.HourglassTop
+                                    DictationState.ERROR -> Icons.Default.MicOff
+                                    DictationState.IDLE -> Icons.Default.Mic
+                                },
+                            )
+                        }
+                    }
+
                     is QuickAction.InsertKey -> {
                         val (imageVector, label) = remember(action, evaluator) {
                             evaluator.computeImageVector(action.data) to evaluator.computeLabel(action.data)

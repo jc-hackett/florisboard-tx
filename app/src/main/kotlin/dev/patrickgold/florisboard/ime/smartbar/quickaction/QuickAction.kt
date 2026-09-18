@@ -19,6 +19,7 @@ package dev.patrickgold.florisboard.ime.smartbar.quickaction
 import android.content.Context
 import androidx.compose.runtime.Composable
 import dev.patrickgold.florisboard.R
+import dev.patrickgold.florisboard.dictationManager
 import dev.patrickgold.florisboard.editorInstance
 import dev.patrickgold.florisboard.ime.keyboard.ComputingEvaluator
 import dev.patrickgold.florisboard.ime.keyboard.KeyData
@@ -36,6 +37,32 @@ sealed class QuickAction {
     open fun onPointerUp(context: Context) = Unit
 
     open fun onPointerCancel(context: Context) = Unit
+
+    /**
+     * Dictation: tap to latch, or hold and speak. The gesture rules and guardrails live in
+     * [dev.patrickgold.florisboard.ime.ai.DictationManager]. Incognito mode suppresses it, because
+     * this is the one action on the bar that leaves the device.
+     */
+    @Serializable
+    @SerialName("dictate")
+    data object Dictate : QuickAction() {
+        override fun onPointerDown(context: Context) {
+            val keyboardManager by context.keyboardManager()
+            if (keyboardManager.activeState.isIncognitoMode) return
+            val dictationManager by context.dictationManager()
+            dictationManager.onPointerDown()
+        }
+
+        override fun onPointerUp(context: Context) {
+            val dictationManager by context.dictationManager()
+            dictationManager.onPointerUp()
+        }
+
+        override fun onPointerCancel(context: Context) {
+            val dictationManager by context.dictationManager()
+            dictationManager.onPointerCancel()
+        }
+    }
 
     @Serializable
     @SerialName("insert_key")
@@ -111,6 +138,7 @@ fun QuickAction.computeDisplayName(evaluator: ComputingEvaluator): String {
             KeyCode.NOOP -> R.string.quick_action__noop
             else -> R.string.general__invalid_fatal
         })
+        is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate)
         is QuickAction.InsertText -> data
     }
 }
@@ -151,6 +179,7 @@ fun QuickAction.computeTooltip(evaluator: ComputingEvaluator): String {
             KeyCode.NOOP -> R.string.quick_action__noop__tooltip
             else -> R.string.general__invalid_fatal
         })
+        is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate__tooltip)
         is QuickAction.InsertText -> "Insert text '$data'"
     }
 }
