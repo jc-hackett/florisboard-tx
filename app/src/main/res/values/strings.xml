@@ -97,6 +97,25 @@
     <string name="quick_action__voice_input__tooltip" comment="IME stands for Input Method Editor and is indirectly equivalent to 'keyboard'.">Open voice input provider</string>
     <string name="quick_action__dictate" comment="Please mind the limited available space for the quick action strings">Dictate</string>
     <string name="quick_action__dictate__tooltip">Tap to dictate, or hold and speak</string>
+    <!-- florisboard-tx dictation -->
+    <string name="dictation__title">Dictation</string>
+    <string name="dictation__summary">Your own speech-to-text server, address and access token</string>
+    <string name="dictation__intro">The dictate key records only while you press it, then sends the clip to the server below over HTTPS. Nothing is sent in incognito mode. Audio is deleted on the server right after it is transcribed.</string>
+    <string name="dictation__server_url">Server address</string>
+    <string name="dictation__server_url_hint">https://dictate.example.com</string>
+    <string name="dictation__token">Access token</string>
+    <string name="dictation__save">Save</string>
+    <string name="dictation__saved">Saved</string>
+    <string name="dictation__microphone__title">Microphone permission</string>
+    <string name="dictation__microphone__granted">Granted</string>
+    <string name="dictation__microphone__not_granted">Not granted. Tap to allow.</string>
+    <string name="dictation__error_not_set_up">Dictation: add the server address and token in Settings, Dictation</string>
+    <string name="dictation__error_not_https">Dictation: the server address must start with https://</string>
+    <string name="dictation__error_no_microphone">Dictation: allow the microphone in Settings, Dictation</string>
+    <string name="dictation__error_microphone_busy">Dictation: the microphone is in use by another app</string>
+    <string name="dictation__error_bad_token">Dictation: the server did not accept the access token</string>
+    <string name="dictation__error_server">Dictation: the server had a problem, try again</string>
+    <string name="dictation__error_network">Dictation: could not reach the server</string>
     <string name="quick_action__floating_window_mode" comment="Please mind the limited available space for the quick action strings">Floating</string>
     <string name="quick_action__floating_window_mode__tooltip">Toggle floating keyboard window mode</string>
     <string name="quick_action__one_handed_mode" comment="Please mind the limited available space for the quick action strings">One-handed</string>

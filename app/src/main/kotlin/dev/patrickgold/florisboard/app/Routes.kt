@@ -56,6 +56,7 @@ import dev.patrickgold.florisboard.app.settings.about.ThirdPartyLicensesScreen
 import dev.patrickgold.florisboard.app.settings.advanced.BackupScreen
 import dev.patrickgold.florisboard.app.settings.advanced.OtherScreen
 import dev.patrickgold.florisboard.app.settings.advanced.PhysicalKeyboardScreen
+import dev.patrickgold.florisboard.app.settings.dictation.DictationScreen
 import dev.patrickgold.florisboard.app.settings.advanced.RestoreScreen
 import dev.patrickgold.florisboard.app.settings.clipboard.ClipboardScreen
 import dev.patrickgold.florisboard.app.settings.dictionary.DictionaryScreen
@@ -171,6 +172,10 @@ object Routes {
         @Serializable
         @Deeplink("settings/media")
         object Media
+
+        @Serializable
+        @Deeplink("settings/dictation")
+        object Dictation
 
         @Serializable
         @Deeplink("settings/other")
@@ -314,6 +319,7 @@ object Routes {
 
             composableWithDeepLink(Settings.Media::class) { MediaScreen() }
 
+            composableWithDeepLink(Settings.Dictation::class) { DictationScreen() }
             composableWithDeepLink(Settings.Other::class) { OtherScreen() }
             composableWithDeepLink(Settings.PhysicalKeyboard::class) { PhysicalKeyboardScreen() }
             composableWithDeepLink(Settings.Backup::class) { BackupScreen() }

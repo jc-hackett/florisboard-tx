@@ -1,0 +1,7 @@
+faster-whisper==1.2.1
+fastapi
+uvicorn[standard]
+python-multipart
+anthropic
+spacy
+# then: python -m spacy download en_core_web_sm

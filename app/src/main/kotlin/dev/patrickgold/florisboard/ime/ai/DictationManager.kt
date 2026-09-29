@@ -17,7 +17,9 @@
 package dev.patrickgold.florisboard.ime.ai
 
 import android.content.Context
+import dev.patrickgold.florisboard.R
 import dev.patrickgold.florisboard.editorInstance
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.florisboard.lib.android.showShortToast
 
 /**
  * What the dictation key is currently doing. Drives the key's appearance, so the user can always
@@ -50,32 +53,16 @@ enum class DictationState {
 /**
  * Turns captured speech into text ready to be committed to the editor.
  *
- * Implementations are expected to do the network work; the manager owns only the gesture, the
- * lifecycle and the guardrails. [StubTranscriber] stands in until the AWS implementation lands,
- * which keeps the key testable without a microphone permission or an AWS account.
+ * Implementations own the microphone and the network work; the manager owns only the gesture, the
+ * lifecycle and the guardrails. The real implementation is [ServerTranscriber], which talks to the
+ * user's own dictation server (self-hosted Whisper, optional de-identified Claude cleanup).
  */
 interface Transcriber {
     /**
      * Captures audio until [stillRecording] returns false, then returns the finished text, or null
-     * if nothing usable was said.
+     * if nothing usable was said. Throws [DictationException] with a user-facing message on failure.
      */
     suspend fun transcribe(stillRecording: () -> Boolean): String?
-}
-
-/** Placeholder that ignores the microphone entirely and returns a fixed sentence. */
-class StubTranscriber : Transcriber {
-    override suspend fun transcribe(stillRecording: () -> Boolean): String {
-        while (stillRecording()) {
-            delay(POLL_INTERVAL_MS)
-        }
-        delay(STUB_WORK_MS)
-        return "This is a placeholder transcript. "
-    }
-
-    companion object {
-        private const val POLL_INTERVAL_MS = 50L
-        private const val STUB_WORK_MS = 400L
-    }
 }
 
 /**
@@ -95,8 +82,7 @@ class DictationManager(context: Context) {
     private val _state = MutableStateFlow(DictationState.IDLE)
     val state: StateFlow<DictationState> = _state.asStateFlow()
 
-    /** Swapped for the AWS-backed implementation once it exists. */
-    var transcriber: Transcriber = StubTranscriber()
+    var transcriber: Transcriber = ServerTranscriber(appContext)
 
     private var pressStartedAt = 0L
     private var endOnRelease = false
@@ -151,9 +137,13 @@ class DictationManager(context: Context) {
             }
             val text = try {
                 transcriber.transcribe(stillRecording = { capturing })
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 hardStop.cancel()
                 _state.value = DictationState.ERROR
+                val message = (e as? DictationException)?.messageRes ?: R.string.dictation__error_network
+                appContext.showShortToast(message)
                 return@launch
             }
             hardStop.cancel()

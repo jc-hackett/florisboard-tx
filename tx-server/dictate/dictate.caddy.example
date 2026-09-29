@@ -1,0 +1,13 @@
+# dictate — florisboard-tx speech endpoint. Separate service on 127.0.0.1:8790 (/opt/dictate).
+# Enable once DNS exists: mv to dictate.caddy, caddy validate, systemctl reload caddy.
+dictate.limn.dev {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy 127.0.0.1:8790
+}

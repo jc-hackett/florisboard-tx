@@ -1,0 +1,35 @@
+[Unit]
+Description=dictate - speech-to-text for the florisboard-tx keyboard (separate from limn)
+After=network-online.target
+
+[Service]
+User=dictate
+Group=dictate
+WorkingDirectory=/opt/dictate
+EnvironmentFile=/opt/dictate/dictate.env
+Environment=HOME=/tmp HF_HOME=/tmp/hf
+ExecStart=/opt/dictate/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8790 --no-access-log --workers 1
+Restart=on-failure
+RestartSec=5
+# Keep it from starving limn: at most one CPU core, 1.5 GB RAM, lower priority.
+CPUQuota=100%
+CPUWeight=50
+Nice=5
+MemoryMax=1536M
+MemorySwapMax=0
+OOMScoreAdjust=500
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadOnlyPaths=/opt/dictate
+
+[Install]
+WantedBy=multi-user.target
