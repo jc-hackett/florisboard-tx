@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish the newest florisboard-tx build for the in-app updater
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/apkpub/publish.py

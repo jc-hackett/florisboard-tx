@@ -100,7 +100,7 @@
     <!-- florisboard-tx dictation -->
     <string name="dictation__title">Dictation</string>
     <string name="dictation__summary">Your own speech-to-text server, address and access token</string>
-    <string name="dictation__intro">The dictate key records only while you press it, then sends the clip to the server below over HTTPS. Nothing is sent in incognito mode. Audio is deleted on the server right after it is transcribed.</string>
+    <string name="dictation__intro">The dictate key records only while it is on, streaming your voice to the server below over HTTPS as you speak. Nothing is sent in incognito mode. Audio is never saved on the server. Tap the key while it waits to cancel.</string>
     <string name="dictation__server_url">Server address</string>
     <string name="dictation__server_url_hint">https://dictate.example.com</string>
     <string name="dictation__token">Access token</string>
@@ -117,6 +117,7 @@
     <string name="dictation__error_server">Dictation: the server had a problem, try again</string>
     <string name="dictation__error_network">Dictation: could not reach the server</string>
     <string name="dictation__cancelled">Dictation cancelled</string>
+    <string name="dictation__update__title">Keyboard updates</string>
     <string name="dictation__autocorrect__title">Autocorrect while typing</string>
     <string name="dictation__autocorrect__on">On. Fixes clear typos when you press space, using the phone\'s own spell checker. Backspace right after undoes it. Tap to turn off.</string>
     <string name="dictation__autocorrect__off">Off. Tap to turn on.</string>

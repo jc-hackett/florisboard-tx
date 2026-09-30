@@ -3,4 +3,8 @@
     <cache-path
         name="backup"
         path="backup-and-restore/"/>
+    <!-- florisboard-tx: in-app updates, downloaded to cache/updates/ and handed to the installer -->
+    <cache-path
+        name="updates"
+        path="updates/"/>
 </paths>

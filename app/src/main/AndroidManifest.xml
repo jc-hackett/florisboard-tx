@@ -7,6 +7,8 @@
     <!-- florisboard-tx: the dictate key records while pressed and sends the clip to the user's own server. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- florisboard-tx: in-app updates from the user's own server (Settings > Dictation) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- Permission needed to create notifications on devices running Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
