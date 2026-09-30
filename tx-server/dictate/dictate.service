@@ -8,7 +8,7 @@ Group=dictate
 WorkingDirectory=/opt/dictate
 EnvironmentFile=/opt/dictate/dictate.env
 Environment=HOME=/tmp HF_HOME=/tmp/hf
-ExecStart=/opt/dictate/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8790 --no-access-log --workers 1
+ExecStart=/opt/dictate/venv2/bin/uvicorn app:app --host 127.0.0.1 --port 8790 --no-access-log --workers 1
 Restart=on-failure
 RestartSec=5
 # Keep it from starving limn: at most one CPU core (two tested 2026-09-30: slower), 1.5 GB RAM, lower priority.

@@ -1,15 +1,23 @@
 """dictate — server half of the florisboard-tx dictation key.
 
-POST /v1/dictate  (Authorization: Bearer <token>, multipart field "audio")
-  1. transcribe in memory with faster-whisper (audio never written to disk,
-     buffer dropped as soon as transcription finishes)
-  2. if ANTHROPIC_API_KEY is set: de-identify -> Claude light cleanup ->
-     restore originals; any failure falls back to the Whisper text
-  3. return {"text": ..., "cleaned": bool, "ms": {...}}
+POST /v1/dictate/stream  (Authorization: Bearer <token>, body = raw PCM, streamed)
+  The phone opens this request when recording starts and streams 16 kHz mono
+  16-bit little-endian PCM as it records (chunked upload). Each chunk is fed
+  straight into a Moonshine streaming speech model, so the transcript is built
+  while the user is still talking; when the upload ends only the last fraction
+  of a second is left to finish.
+POST /v1/dictate  (multipart field "audio", a WAV file) — the older one-shot
+  form, kept so an older phone build keeps working.
 
-Logs carry timing and status only - never audio, transcript or cleaned text.
-Usage counts (time, user, word count, seconds, status) go to COUNTS_FILE so the
-user can see how much they dictate; never the words themselves.
+Either way, after transcription:
+  if ANTHROPIC_API_KEY is set: de-identify -> Claude light cleanup -> restore
+  originals; any failure falls back to the raw transcript.
+  Returns {"text": ..., "cleaned": bool, "ms": {...}}.
+
+Audio is never written to disk and is dropped as soon as it has been fed to the
+model. Logs carry timing and status only - never audio, transcript or cleaned
+text. Usage counts (time, user, word count, seconds, status) go to COUNTS_FILE
+so the user can see how much they dictate; never the words themselves.
 Self-contained: everything it needs is in this folder + dictate.env, so it can
 move to its own server by copying /opt/dictate and the unit file.
 """
@@ -18,30 +26,42 @@ import hmac
 import io
 import logging
 import os
+import re
 import threading
 import time
+import wave
 
+import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from faster_whisper import WhisperModel
+from starlette.requests import ClientDisconnect
+
+import moonshine_voice as mv
+from moonshine_voice import Transcriber
+from spacy.lang.en.stop_words import STOP_WORDS
 
 import deid
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 TOKENS_FILE = os.environ.get("DICTATE_TOKENS", os.path.join(BASE, "tokens"))
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small.en")
-WHISPER_THREADS = int(os.environ.get("WHISPER_THREADS", "1"))
+STT_ARCH = os.environ.get("MOONSHINE_ARCH", "MEDIUM_STREAMING")
+STT_CACHE = os.environ.get("MOONSHINE_CACHE", os.path.join(BASE, "models", "moonshine"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5")
+# "claude": de-identified Claude tidy (~1 s); "local": on-box tidy only (instant).
+CLEANUP_MODE = os.environ.get("CLEANUP_MODE", "claude").strip().lower()
 MAX_BYTES = int(os.environ.get("MAX_AUDIO_BYTES", str(8 * 1024 * 1024)))
 MAX_SECONDS = float(os.environ.get("MAX_AUDIO_SECONDS", "120"))
 COUNTS_FILE = os.environ.get("DICTATE_COUNTS", "/var/lib/dictate/counts.csv")
+SAMPLE_RATE = 16000
 
 log = logging.getLogger("dictate")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8",
-                     cpu_threads=WHISPER_THREADS, download_root=os.path.join(BASE, "models"))
-whisper_lock = threading.Lock()
+_model_path, _model_arch = mv.get_model_for_language(
+    "en", mv.ModelArch[STT_ARCH], cache_root=STT_CACHE, on_progress=lambda f, n: None)
+stt = Transcriber(model_path=_model_path, model_arch=_model_arch)
+# One model shared by every request; feeding is serialised so two phones can't trip over it.
+stt_lock = threading.Lock()
 
 _api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 claude = None
@@ -84,11 +104,13 @@ def _load_tokens():
 def auth(request: Request) -> str:
     header = request.headers.get("authorization", "")
     if not header.lower().startswith("bearer "):
+        log.info("status=rejected reason=missing_token")
         raise HTTPException(401, "missing token")
     digest = hashlib.sha256(header[7:].strip().encode()).hexdigest()
     for known, name in _load_tokens().items():  # re-read each call so tokens can change live
         if hmac.compare_digest(known, digest):
             return name
+    log.info("status=rejected reason=bad_token")
     raise HTTPException(401, "bad token")
 
 
@@ -104,14 +126,74 @@ def _record_count(user: str, words: int, seconds: float, status: str):
         log.info("counts_write_failed err=%s", type(e).__name__)
 
 
-def _transcribe(buf: io.BytesIO):
-    with whisper_lock:
-        segments, info = model.transcribe(buf, beam_size=1, language="en", vad_filter=True,
-                                          condition_on_previous_text=False)
-        if info.duration > MAX_SECONDS:
-            raise HTTPException(413, "clip too long")
-        text = " ".join(s.text.strip() for s in segments).strip()
-    return text, info.duration
+_FILLER = re.compile(r"(?i)(?<![\w'])(?:um+|uh+|erm*|ah+|hmm+)(?![\w'])[,.?!]*\s*")
+
+
+def _lines_text(transcript) -> str:
+    """Join the model's lines. The model starts every line (i.e. every pause) with a capital,
+    which reads as a name to deid and to Claude; when a line carries on the previous sentence
+    and starts with an ordinary word ("so", "the", "you"), put it back in lower case. Anything
+    that isn't an ordinary word keeps its capital, so a real name is never hidden from deid."""
+    parts = []
+    for line in transcript.lines:
+        t = (line.text or "").strip()
+        if not t or not _FILLER.sub("", t).strip():
+            continue  # empty, or nothing but "um"/"uh": drop it rather than let it end a sentence
+        if parts and not parts[-1].endswith((".", "!", "?", ":")):
+            first = t.split(maxsplit=1)[0]
+            if first.lower() in STOP_WORDS and not first.startswith("I"):
+                t = t[0].lower() + t[1:]
+        parts.append(t)
+    return " ".join(parts).strip()
+
+
+def _local_tidy(text: str) -> str:
+    """Instant, on-box tidy: drop um/uh-type fillers, fix spacing and the first capital.
+    Used when Claude cleanup is off, fails or is rejected."""
+    t = _FILLER.sub("", text)
+    t = re.sub(r"\s+([,.?!])", r"\1", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" ,")
+    # A sentence that now starts mid-way ("so the weather...") after a dropped filler.
+    t = re.sub(r"(^|[.?!]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
+    return t
+
+
+class _LiveStream:
+    """One dictation: PCM in as it arrives, transcript out at the end."""
+
+    def __init__(self):
+        self.stream = stt.create_stream()
+        self.stream.start()
+        self.carry = b""  # an odd trailing byte waiting for its partner
+        self.samples = 0
+
+    def feed(self, data: bytes):
+        data = self.carry + data
+        cut = len(data) - (len(data) % 2)
+        self.carry = data[cut:]
+        if not cut:
+            return
+        pcm = np.frombuffer(data[:cut], dtype=np.int16).astype(np.float32) / 32768.0
+        self.samples += len(pcm)
+        with stt_lock:
+            self.stream.add_audio(pcm, SAMPLE_RATE)
+
+    def finish(self) -> str:
+        with stt_lock:
+            self.stream.stop()
+            text = _lines_text(self.stream.update_transcription())
+        self.close()
+        return text
+
+    def close(self):
+        try:
+            self.stream.close()
+        except Exception:
+            pass
+
+    @property
+    def seconds(self) -> float:
+        return self.samples / SAMPLE_RATE
 
 
 def _cleanup(text: str):
@@ -130,52 +212,103 @@ def _cleanup(text: str):
     return deid.reidentify(out, mapping, masked), len(mapping)
 
 
-@app.get("/healthz")
-def healthz():
-    return {"ok": True, "whisper": WHISPER_MODEL, "cleanup": bool(claude)}
-
-
-@app.post("/v1/dictate")
-async def dictate(audio: UploadFile = File(...), cleanup: bool = Form(True),
-                  user: str = Depends(auth)):
-    t0 = time.perf_counter()
-    data = await audio.read(MAX_BYTES + 1)
-    await audio.close()
-    if len(data) > MAX_BYTES:
-        raise HTTPException(413, "clip too large")
-    if not data:
-        raise HTTPException(400, "empty clip")
-
-    buf = io.BytesIO(data)
-    del data
-    try:
-        text, seconds = await run_in_threadpool(_transcribe, buf)
-    except HTTPException:
-        raise
-    except Exception as e:  # undecodable audio etc.; log the type only
-        log.info("user=%s status=decode_error err=%s", user, type(e).__name__)
-        raise HTTPException(400, "could not read audio")
-    finally:
-        buf.close()  # audio is gone from here on
-        del buf
-    t1 = time.perf_counter()
-
-    cleaned, redactions, status = False, 0, "whisper_only"
-    if claude and cleanup and text:
+async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: float, t_text: float):
+    """Shared tail: optional Claude cleanup, logging, counts, response."""
+    cleaned, redactions, status = False, 0, "local"
+    raw, text = text, _local_tidy(text)
+    if claude and cleanup and CLEANUP_MODE == "claude" and raw:
         try:
-            result, redactions = await run_in_threadpool(_cleanup, text)
+            result, redactions = await run_in_threadpool(_cleanup, raw)
             if result:
                 text, cleaned, status = result, True, "cleaned"
             else:
                 status = "cleanup_rejected"
         except Exception as e:
             status = f"cleanup_error:{type(e).__name__}"
-    t2 = time.perf_counter()
+    t_done = time.perf_counter()
 
-    ms = {"whisper": round((t1 - t0) * 1000), "cleanup": round((t2 - t1) * 1000),
-          "total": round((t2 - t0) * 1000)}
+    ms = {"stt_tail": round((t_text - t_heard) * 1000), "cleanup": round((t_done - t_text) * 1000),
+          "after_release": round((t_done - t_heard) * 1000)}
     words = len(text.split())
-    log.info("user=%s status=%s audio_s=%.1f chars=%d words=%d redactions=%d whisper_ms=%d cleanup_ms=%d",
-             user, status, seconds, len(text), words, redactions, ms["whisper"], ms["cleanup"])
+    log.info("user=%s status=%s audio_s=%.1f chars=%d words=%d redactions=%d stt_tail_ms=%d "
+             "cleanup_ms=%d after_release_ms=%d",
+             user, status, seconds, len(text), words, redactions, ms["stt_tail"], ms["cleanup"],
+             ms["after_release"])
     _record_count(user, words, seconds, status)
     return {"text": text, "cleaned": cleaned, "ms": ms}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "stt": _model_arch.name.lower(),
+            "cleanup": CLEANUP_MODE if (claude or CLEANUP_MODE == "local") else "local"}
+
+
+@app.post("/v1/dictate/stream")
+async def dictate_stream(request: Request, cleanup: bool = True, user: str = Depends(auth)):
+    live = await run_in_threadpool(_LiveStream)
+    received = 0
+    try:
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            received += len(chunk)
+            if received > MAX_BYTES or live.seconds > MAX_SECONDS:
+                raise HTTPException(413, "clip too long")
+            await run_in_threadpool(live.feed, chunk)
+    except ClientDisconnect:
+        # The phone gave up or the user cancelled: drop everything, type nothing.
+        live.close()
+        log.info("user=%s status=aborted audio_s=%.1f", user, live.seconds)
+        raise HTTPException(499, "client went away")
+    except BaseException:
+        live.close()
+        raise
+    t_heard = time.perf_counter()  # upload finished = the user let go
+    text = await run_in_threadpool(live.finish)
+    t_text = time.perf_counter()
+    return await _finish(user, text, live.seconds, cleanup, t_heard, t_text)
+
+
+def _decode_wav(data: bytes) -> np.ndarray:
+    with wave.open(io.BytesIO(data)) as w:
+        if w.getsampwidth() != 2 or w.getnchannels() != 1:
+            raise ValueError("expected 16-bit mono")
+        rate = w.getframerate()
+        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+    if rate != SAMPLE_RATE:
+        # Linear resample; the phone always sends 16 kHz, this is only a safety net.
+        n = int(len(pcm) * SAMPLE_RATE / rate)
+        pcm = np.interp(np.linspace(0, len(pcm), n, endpoint=False), np.arange(len(pcm)), pcm).astype(np.float32)
+    return pcm
+
+
+def _transcribe_whole(pcm: np.ndarray) -> str:
+    with stt_lock:
+        return _lines_text(stt.transcribe_without_streaming(pcm, SAMPLE_RATE))
+
+
+@app.post("/v1/dictate")
+async def dictate(audio: UploadFile = File(...), cleanup: bool = Form(True),
+                  user: str = Depends(auth)):
+    t_heard = time.perf_counter()
+    data = await audio.read(MAX_BYTES + 1)
+    await audio.close()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "clip too large")
+    if not data:
+        raise HTTPException(400, "empty clip")
+    try:
+        pcm = _decode_wav(data)
+    except Exception as e:  # undecodable audio etc.; log the type only
+        log.info("user=%s status=decode_error err=%s", user, type(e).__name__)
+        raise HTTPException(400, "could not read audio")
+    finally:
+        del data
+    seconds = len(pcm) / SAMPLE_RATE
+    if seconds > MAX_SECONDS:
+        raise HTTPException(413, "clip too long")
+    text = await run_in_threadpool(_transcribe_whole, pcm)
+    del pcm
+    t_text = time.perf_counter()
+    return await _finish(user, text, seconds, cleanup, t_heard, t_text)

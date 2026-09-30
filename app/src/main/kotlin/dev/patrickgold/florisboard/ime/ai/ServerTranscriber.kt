@@ -25,27 +25,33 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
 import dev.patrickgold.florisboard.R
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.UUID
+import kotlin.coroutines.coroutineContext
 
 /** A dictation failure with a message fit to show the user in a toast. */
 class DictationException(val messageRes: Int) : Exception()
 
 /**
- * Records from the microphone while the key is held, then sends the clip to the user's own
- * dictation server (see DictationSettings) and returns the text it sends back.
+ * Records from the microphone while the key is held and streams the audio, as it is recorded,
+ * to the user's own dictation server (see DictationSettings), which transcribes it on the fly.
+ * When the press ends, the upload ends and the server answers with the finished text almost at
+ * once, because the transcript was built while the user was still talking.
  *
- * The clip is 16 kHz mono PCM wrapped as WAV and held in memory only; it is never written to
- * storage. Nothing is sent until recording has ended on an explicit press or release.
+ * The audio is 16 kHz mono 16-bit PCM, held in memory only and never written to storage. Nothing
+ * is sent unless the user explicitly pressed the key; a press too short to be speech is cancelled,
+ * which closes the connection and makes the server drop what it had.
  */
 class ServerTranscriber(context: Context) : Transcriber {
     private val appContext = context.applicationContext
@@ -62,18 +68,33 @@ class ServerTranscriber(context: Context) : Transcriber {
             throw DictationException(R.string.dictation__error_no_microphone)
         }
 
-        val pcm = record(stillRecording)
-        if (pcm.size < SAMPLE_RATE * BYTES_PER_SAMPLE * MIN_SECONDS_TENTHS / 10) return null
-        val wav = wrapWav(pcm)
-        return withContext(Dispatchers.IO) { upload(server, token, wav) }
+        return withContext(Dispatchers.IO) {
+            coroutineScope {
+                // Recording never waits on the network: chunks queue here while the connection
+                // is still being set up, and the uploader drains them as fast as it can.
+                val chunks = Channel<ByteArray>(Channel.UNLIMITED)
+                val upload = async { stream(server, token, chunks) }
+                val recorded = try {
+                    record(stillRecording) { chunks.trySend(it) }
+                } finally {
+                    chunks.close()
+                }
+                if (recorded < SAMPLE_RATE * BYTES_PER_SAMPLE * MIN_SECONDS_TENTHS / 10) {
+                    upload.cancel()
+                    return@coroutineScope null
+                }
+                upload.await()
+            }
+        }
     }
 
     @SuppressLint("MissingPermission") // checked in transcribe()
-    private suspend fun record(stillRecording: () -> Boolean): ByteArray = withContext(Dispatchers.IO) {
+    private suspend fun record(stillRecording: () -> Boolean, onChunk: (ByteArray) -> Unit): Int {
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
-        val bufSize = maxOf(minBuf, SAMPLE_RATE * BYTES_PER_SAMPLE / 5)
+        // ~100 ms per read: small enough that the server hears speech almost as it is spoken.
+        val bufSize = maxOf(minBuf, SAMPLE_RATE * BYTES_PER_SAMPLE / 10)
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize,
@@ -82,52 +103,45 @@ class ServerTranscriber(context: Context) : Transcriber {
             recorder.release()
             throw DictationException(R.string.dictation__error_microphone_busy)
         }
-        val out = ByteArrayOutputStream(SAMPLE_RATE * BYTES_PER_SAMPLE * 15)
-        val chunk = ByteArray(bufSize)
+        val chunk = ByteArray(SAMPLE_RATE * BYTES_PER_SAMPLE / 10)
+        var total = 0
         try {
             recorder.startRecording()
             while (stillRecording()) {
-                ensureActive()
+                coroutineContext.ensureActive()
                 val n = recorder.read(chunk, 0, chunk.size)
-                if (n > 0) out.write(chunk, 0, n)
+                if (n > 0) {
+                    total += n
+                    onChunk(chunk.copyOf(n))
+                }
             }
         } finally {
             // Microphone closed the moment the press ends, whatever happens next.
             runCatching { recorder.stop() }
             recorder.release()
         }
-        out.toByteArray()
+        return total
     }
 
-    private fun wrapWav(pcm: ByteArray): ByteArray {
-        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
-            put("RIFF".toByteArray()); putInt(36 + pcm.size); put("WAVE".toByteArray())
-            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1)
-            putInt(SAMPLE_RATE); putInt(SAMPLE_RATE * BYTES_PER_SAMPLE)
-            putShort(BYTES_PER_SAMPLE.toShort()); putShort(16)
-            put("data".toByteArray()); putInt(pcm.size)
-        }.array()
-        return header + pcm
-    }
-
-    private fun upload(server: String, token: String, wav: ByteArray): String? {
-        val boundary = "----tx" + UUID.randomUUID().toString().replace("-", "")
-        val conn = (URL(server.trimEnd('/') + "/v1/dictate").openConnection() as HttpURLConnection).apply {
+    private suspend fun stream(server: String, token: String, chunks: ReceiveChannel<ByteArray>): String? {
+        val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
+            setChunkedStreamingMode(0)
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             useCaches = false
             setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setRequestProperty("Content-Type", "application/octet-stream")
         }
+        // A cancelled dictation must drop the connection at once, even mid-write.
+        coroutineContext[Job]?.invokeOnCompletion { cause -> if (cause != null) conn.disconnect() }
         try {
-            DataOutputStream(conn.outputStream).use { body ->
-                body.writeBytes("--$boundary\r\n")
-                body.writeBytes("Content-Disposition: form-data; name=\"audio\"; filename=\"clip.wav\"\r\n")
-                body.writeBytes("Content-Type: audio/wav\r\n\r\n")
-                body.write(wav)
-                body.writeBytes("\r\n--$boundary--\r\n")
+            conn.outputStream.use { out ->
+                for (piece in chunks) {
+                    out.write(piece)
+                    out.flush()
+                }
             }
             val code = conn.responseCode
             if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(R.string.dictation__error_bad_token)
@@ -137,6 +151,13 @@ class ServerTranscriber(context: Context) : Transcriber {
             return if (text.isEmpty()) null else "$text "
         } catch (e: DictationException) {
             throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            // The server may have refused before we finished sending (a bad token, say).
+            val code = runCatching { conn.responseCode }.getOrNull()
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(R.string.dictation__error_bad_token)
+            throw DictationException(R.string.dictation__error_network)
         } catch (e: Exception) {
             throw DictationException(R.string.dictation__error_network)
         } finally {
