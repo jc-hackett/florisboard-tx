@@ -170,7 +170,9 @@ class ServerTranscriber(context: Context) : Transcriber {
         private const val BYTES_PER_SAMPLE = 2
         /** Clips shorter than this (in tenths of a second) are treated as accidental presses. */
         private const val MIN_SECONDS_TENTHS = 3
-        private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 45_000
+        /** Short on purpose: the server normally answers in well under a second after release,
+         *  so a long silence means the connection is dead, and waiting helps no one. */
+        private const val CONNECT_TIMEOUT_MS = 5_000
+        private const val READ_TIMEOUT_MS = 8_000
     }
 }

@@ -76,6 +76,8 @@ interface Transcriber {
  *
  * - A short tap latches recording on; the next tap ends it.
  * - A longer press records for as long as it is held and ends on release.
+ * - A tap while it is still waiting for the text is the kill switch: it drops the connection,
+ *   types nothing and frees the key at once.
  *
  * A latched recording also ends itself after [MAX_SESSION_MS], so the worst case for a key pressed
  * by accident is bounded rather than open-ended.
@@ -109,7 +111,9 @@ class DictationManager(context: Context) {
                 endOnRelease = true
             }
             DictationState.WORKING -> {
-                // Busy finishing the last one; ignore rather than queue a second.
+                // Kill switch: the user is done waiting. Drop it and free the key.
+                abort()
+                appContext.showShortToast(R.string.dictation__cancelled)
             }
             DictationState.IDLE, DictationState.ERROR -> {
                 pressStartedAt = System.currentTimeMillis()
