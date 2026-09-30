@@ -16,7 +16,12 @@
 
 package dev.patrickgold.florisboard.ime.ai
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.os.PersistableBundle
 import dev.patrickgold.florisboard.R
 import dev.patrickgold.florisboard.editorInstance
 import kotlinx.coroutines.CancellationException
@@ -157,10 +162,28 @@ class DictationManager(context: Context) {
                 withContext(Dispatchers.Main) {
                     val editorInstance by appContext.editorInstance()
                     editorInstance.commitText(text)
+                    copyToClipboard(text.trim())
                 }
             }
             _state.value = DictationState.IDLE
         }
+    }
+
+    /**
+     * Also puts the dictated text on the clipboard, so it can be pasted elsewhere if the field
+     * lost it. Marked sensitive: Android hides it from clipboard previews, and FlorisBoard's own
+     * clipboard history treats it as sensitive too.
+     */
+    private fun copyToClipboard(text: String) {
+        if (text.isEmpty()) return
+        val clipboard = appContext.getSystemService(ClipboardManager::class.java) ?: return
+        val clip = ClipData.newPlainText("Dictation", text)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        runCatching { clipboard.setPrimaryClip(clip) }
     }
 
     /** Closes the microphone and lets the in-flight transcription finish. */
