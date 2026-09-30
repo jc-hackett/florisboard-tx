@@ -63,20 +63,51 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 _model_path, _model_arch = mv.get_model_for_language(
     "en", mv.ModelArch[STT_ARCH], cache_root=STT_CACHE, on_progress=lambda f, n: None)
-stt = Transcriber(model_path=_model_path, model_arch=_model_arch)
+# How hard the word list pulls (library default 2.0). 3 was tried and produced half-words
+# ("LHIM" for "limn"); sound-alikes are handled by aliases instead.
+KEYTERM_BOOST = os.environ.get("KEYTERM_BOOST", "2")
+stt = Transcriber(model_path=_model_path, model_arch=_model_arch,
+                  options={"keyterm_boost": KEYTERM_BOOST})
 # One model shared by every request; feeding is serialised so two phones can't trip over it.
 stt_lock = threading.Lock()
 MAX_TERMS = 200
 _file_terms_mtime = None
 _file_terms: list = []
 _active_terms = None
+_aliases: dict = {}  # "lim" -> "limn": sound-alikes the model can't tell apart
+
+
+def _parse_terms(lines):
+    """Each line is a word, or 'word = sounds like, sounds like'. Returns (terms, aliases)."""
+    terms, aliases = [], {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        word, _, heard = line.partition("=")
+        word = word.strip().replace(",", " ")
+        if not word or len(word) > 60:
+            continue
+        terms.append(word)
+        for alias in heard.split(","):
+            alias = alias.strip()
+            if alias and alias.lower() != word.lower():
+                aliases[alias.lower()] = word
+    return terms, aliases
+
+
+def _apply_aliases(text: str) -> str:
+    if not _aliases or not text:
+        return text
+    pattern = r"(?<![\w'])(" + "|".join(re.escape(a) for a in sorted(_aliases, key=len, reverse=True)) + r")(?![\w'])"
+    return re.sub(pattern, lambda m: _aliases[m.group(1).lower()], text, flags=re.IGNORECASE)
 
 
 def _refresh_keyterms(phone_terms=()):
     """Point the model at the word list: the server file plus whatever the phone sent (its
     Settings > Dictation list). Cheap no-op unless the combined list changed. With one shared
     model the list is global, which is fine while each server serves one person."""
-    global _file_terms_mtime, _file_terms, _active_terms
+    global _file_terms_mtime, _file_terms, _active_terms, _aliases
     try:
         mtime = os.path.getmtime(KEYTERMS_FILE)
     except OSError:
@@ -85,9 +116,12 @@ def _refresh_keyterms(phone_terms=()):
         _file_terms = []
         if mtime is not None:
             with open(KEYTERMS_FILE, encoding="utf-8") as f:
-                _file_terms = [t.strip() for t in f if t.strip() and not t.lstrip().startswith("#")]
+                _file_terms = list(f)
         _file_terms_mtime = mtime
-    terms = list(dict.fromkeys([*_file_terms, *phone_terms]))[:MAX_TERMS]
+    file_words, file_aliases = _parse_terms(_file_terms)
+    phone_words, phone_aliases = _parse_terms(phone_terms)
+    _aliases = {**file_aliases, **phone_aliases}
+    terms = list(dict.fromkeys([*file_words, *phone_words]))[:MAX_TERMS]
     if terms == _active_terms:
         return
     with stt_lock:
@@ -100,8 +134,8 @@ def _phone_terms(request: Request):
     raw = request.headers.get("x-dictate-words", "")
     if not raw:
         return []
-    words = [w.strip() for w in unquote_plus(raw).splitlines()]
-    return [w for w in words if w and len(w) <= 60][:MAX_TERMS]
+    lines = [w.strip() for w in unquote_plus(raw).splitlines()]
+    return [w for w in lines if w and len(w) <= 200][:MAX_TERMS]
 
 
 _refresh_keyterms()
@@ -258,6 +292,7 @@ def _cleanup(text: str):
 async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: float, t_text: float):
     """Shared tail: optional Claude cleanup, logging, counts, response."""
     cleaned, redactions, status = False, 0, "local"
+    text = _apply_aliases(text)
     raw, text = text, _local_tidy(text)
     if claude and cleanup and CLEANUP_MODE == "claude" and raw:
         try:
