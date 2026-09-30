@@ -37,14 +37,6 @@ jobs:
           distribution: temurin
       - name: Set up CMake and Ninja
         uses: lukka/get-cmake@v4.0.2
-      # Reuse one debug signing key across runs, so a new build installs over the last one
-      # instead of needing an uninstall. (Stop-gap: GitHub drops caches unused for 7 days; the
-      # proper fix is a release key held as a repository secret.)
-      - name: Keep the debug signing key between builds
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: florisboard-tx-debug-keystore-v1
       - name: Build with Gradle
         run: ./gradlew clean assembleDebug
       - uses: actions/upload-artifact@v4
