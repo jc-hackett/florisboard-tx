@@ -52,6 +52,7 @@ fun DictationScreen() = FlorisScreen {
     var serverUrl by remember { mutableStateOf(settings.serverUrl) }
     var token by remember { mutableStateOf(settings.token) }
     var words by remember { mutableStateOf(settings.words) }
+    var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var saved by remember { mutableStateOf(false) }
     var micGranted by remember {
         mutableStateOf(
@@ -76,6 +77,13 @@ fun DictationScreen() = FlorisScreen {
                 stringRes(R.string.dictation__microphone__not_granted)
             },
             onClick = { if (!micGranted) micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+        )
+        Preference(
+            title = stringRes(R.string.dictation__autocorrect__title),
+            summary = stringRes(
+                if (autocorrect) R.string.dictation__autocorrect__on else R.string.dictation__autocorrect__off
+            ),
+            onClick = { autocorrect = !autocorrect; settings.autocorrect = autocorrect },
         )
         OutlinedTextField(
             value = serverUrl,

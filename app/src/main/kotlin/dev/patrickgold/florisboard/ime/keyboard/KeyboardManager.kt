@@ -29,6 +29,8 @@ import dev.patrickgold.florisboard.app.FlorisPreferenceStore
 import dev.patrickgold.florisboard.appContext
 import dev.patrickgold.florisboard.clipboardManager
 import dev.patrickgold.florisboard.dictationManager
+import dev.patrickgold.florisboard.ime.ai.AutoCorrector
+import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import dev.patrickgold.florisboard.editorInstance
 import dev.patrickgold.florisboard.extensionManager
 import dev.patrickgold.florisboard.ime.ImeUiMode
@@ -85,6 +87,8 @@ import org.florisboard.lib.kotlin.collectLatestIn
 private val DoubleSpacePeriodMatcher = """([^.!?‽\s]\s)""".toRegex()
 
 class KeyboardManager(context: Context) : InputKeyEventReceiver {
+    /** On-device autocorrect via the system spell checker (florisboard-tx). */
+    private val autoCorrector by lazy { AutoCorrector(context) }
     private val prefs by FlorisPreferenceStore
     private val appContext by context.appContext()
     private val clipboardManager by context.clipboardManager()
@@ -416,6 +420,8 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
      * Handles a [KeyCode.DELETE] event.
      */
     private fun handleBackwardDelete(unit: OperationUnit) {
+        // Backspace straight after an autocorrect puts the original word back.
+        if (unit == OperationUnit.CHARACTERS && autoCorrector.onBackspace()) return
         if (inputEventDispatcher.isPressed(KeyCode.SHIFT)) {
             return handleForwardDelete(unit)
         }
@@ -563,6 +569,11 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
      * enabled by the user.
      */
     private fun handleSpace(data: KeyData) {
+        autoCorrector.onSpace(
+            textBeforeCursor = editorInstance.run { activeContent.getTextBeforeCursor(48) },
+            editorInfo = editorInstance.activeInfo,
+            locale = subtypeManager.activeSubtype.primaryLocale.base,
+        )
         val candidate = nlpManager.getAutoCommitCandidate()
         candidate?.let { commitCandidate(it) }
         if (prefs.keyboard.spaceBarSwitchesToCharacters.get()) {
@@ -619,9 +630,11 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
      * Handles a [KeyCode.TOGGLE_AUTOCORRECT] event.
      */
     private fun handleToggleAutocorrect() {
+        val settings = DictationSettings(appContext)
+        settings.autocorrect = !settings.autocorrect
         lastToastReference.get()?.cancel()
         lastToastReference = WeakReference(
-            appContext.showLongToastSync("Autocorrect toggle is a placeholder and not yet implemented")
+            appContext.showShortToastSync(if (settings.autocorrect) "Autocorrect on" else "Autocorrect off")
         )
     }
 
@@ -706,6 +719,7 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
 
     override fun onInputKeyUp(data: KeyData) = activeState.batchEdit {
         val windowController = FlorisImeService.windowControllerOrNull() ?: return@batchEdit
+        if (data.code != KeyCode.SPACE && data.code != KeyCode.DELETE) autoCorrector.onOtherInput()
         when (data.code) {
             KeyCode.ARROW_DOWN,
             KeyCode.ARROW_LEFT,

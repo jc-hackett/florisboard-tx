@@ -45,6 +45,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getString(KEY_WORDS, "") ?: ""
         set(value) = prefs.edit().putString(KEY_WORDS, value.trim()).apply()
 
+    /** Autocorrect while typing (see AutoCorrector). On unless the user turns it off. */
+    var autocorrect: Boolean
+        get() = prefs.getBoolean(KEY_AUTOCORRECT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTOCORRECT, value).apply()
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -53,6 +58,7 @@ class DictationSettings(context: Context) {
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
         private const val KEY_WORDS = "words"
+        private const val KEY_AUTOCORRECT = "autocorrect"
         const val MAX_WORDS = 200
     }
 }
