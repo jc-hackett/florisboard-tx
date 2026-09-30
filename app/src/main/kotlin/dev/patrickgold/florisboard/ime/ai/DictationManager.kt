@@ -113,7 +113,7 @@ class DictationManager(context: Context) {
             DictationState.WORKING -> {
                 // Kill switch: the user is done waiting. Drop it and free the key.
                 abort()
-                appContext.showShortToast(R.string.dictation__cancelled)
+                scope.launch { appContext.showShortToast(R.string.dictation__cancelled) }
             }
             DictationState.IDLE, DictationState.ERROR -> {
                 pressStartedAt = System.currentTimeMillis()
