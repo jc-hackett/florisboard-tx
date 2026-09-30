@@ -8,6 +8,8 @@ POST /v1/dictate  (Authorization: Bearer <token>, multipart field "audio")
   3. return {"text": ..., "cleaned": bool, "ms": {...}}
 
 Logs carry timing and status only - never audio, transcript or cleaned text.
+Usage counts (time, user, word count, seconds, status) go to COUNTS_FILE so the
+user can see how much they dictate; never the words themselves.
 Self-contained: everything it needs is in this folder + dictate.env, so it can
 move to its own server by copying /opt/dictate and the unit file.
 """
@@ -32,6 +34,7 @@ WHISPER_THREADS = int(os.environ.get("WHISPER_THREADS", "1"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5")
 MAX_BYTES = int(os.environ.get("MAX_AUDIO_BYTES", str(8 * 1024 * 1024)))
 MAX_SECONDS = float(os.environ.get("MAX_AUDIO_SECONDS", "120"))
+COUNTS_FILE = os.environ.get("DICTATE_COUNTS", "/var/lib/dictate/counts.csv")
 
 log = logging.getLogger("dictate")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -87,6 +90,18 @@ def auth(request: Request) -> str:
         if hmac.compare_digest(known, digest):
             return name
     raise HTTPException(401, "bad token")
+
+
+def _record_count(user: str, words: int, seconds: float, status: str):
+    """Append one usage row. Numbers only; a failure here never affects the dictation."""
+    try:
+        new = not os.path.exists(COUNTS_FILE)
+        with open(COUNTS_FILE, "a") as f:
+            if new:
+                f.write("time,user,words,audio_s,status\n")
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')},{user},{words},{seconds:.1f},{status}\n")
+    except OSError as e:
+        log.info("counts_write_failed err=%s", type(e).__name__)
 
 
 def _transcribe(buf: io.BytesIO):
@@ -159,6 +174,8 @@ async def dictate(audio: UploadFile = File(...), cleanup: bool = Form(True),
 
     ms = {"whisper": round((t1 - t0) * 1000), "cleanup": round((t2 - t1) * 1000),
           "total": round((t2 - t0) * 1000)}
-    log.info("user=%s status=%s audio_s=%.1f chars=%d redactions=%d whisper_ms=%d cleanup_ms=%d",
-             user, status, seconds, len(text), redactions, ms["whisper"], ms["cleanup"])
+    words = len(text.split())
+    log.info("user=%s status=%s audio_s=%.1f chars=%d words=%d redactions=%d whisper_ms=%d cleanup_ms=%d",
+             user, status, seconds, len(text), words, redactions, ms["whisper"], ms["cleanup"])
+    _record_count(user, words, seconds, status)
     return {"text": text, "cleaned": cleaned, "ms": ms}
