@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.patrickgold.florisboard.R
 import dev.patrickgold.florisboard.ime.ai.AppUpdater
+import dev.patrickgold.florisboard.ime.ai.AutoCorrector
 import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import kotlinx.coroutines.launch
 import dev.patrickgold.florisboard.lib.compose.FlorisScreen
@@ -58,6 +59,8 @@ fun DictationScreen() = FlorisScreen {
     var words by remember { mutableStateOf(settings.words) }
     var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var saved by remember { mutableStateOf(false) }
+    val autoCorrector = remember { AutoCorrector(context) }
+    var spellStatus by remember { mutableStateOf(autoCorrector.spellCheckerStatus() + " Tap to test with \"teh\" and \"spellchdcker\".") }
     val updater = remember { AppUpdater(context) }
     val scope = rememberCoroutineScope()
     var release by remember { mutableStateOf<AppUpdater.Release?>(null) }
@@ -143,6 +146,18 @@ fun DictationScreen() = FlorisScreen {
                 if (autocorrect) R.string.dictation__autocorrect__on else R.string.dictation__autocorrect__off
             ),
             onClick = { autocorrect = !autocorrect; settings.autocorrect = autocorrect },
+        )
+        Preference(
+            title = stringRes(R.string.dictation__spellcheck__title),
+            summary = spellStatus,
+            onClick = {
+                spellStatus = "Testing…"
+                scope.launch {
+                    val locale = java.util.Locale.getDefault()
+                    spellStatus = autoCorrector.spellCheckerStatus() + "\n" +
+                        autoCorrector.test("teh", locale) + "\n" + autoCorrector.test("spellchdcker", locale)
+                }
+            },
         )
         OutlinedTextField(
             value = serverUrl,

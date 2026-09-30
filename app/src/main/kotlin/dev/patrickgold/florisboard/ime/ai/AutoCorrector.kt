@@ -27,6 +27,8 @@ import android.view.textservice.TextServicesManager
 import dev.patrickgold.florisboard.FlorisImeService
 import dev.patrickgold.florisboard.ime.editor.FlorisEditorInfo
 import dev.patrickgold.florisboard.ime.editor.InputAttributes
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
@@ -73,6 +75,63 @@ class AutoCorrector(context: Context) {
         pending[sequence] = word
         while (pending.size > 8) pending.remove(pending.keys.first())
         runCatching { s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, sequence)), 3) }
+    }
+
+    /** Plain-words status of the phone's spell checker, for Settings > Dictation. */
+    fun spellCheckerStatus(): String {
+        val tsm = appContext.getSystemService(TextServicesManager::class.java)
+            ?: return "No spell checker service on this phone."
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+            return "This Android version doesn't say which spell checker is in use; tap to test it."
+        }
+        if (!tsm.isSpellCheckerEnabled) return "The phone's spell checker is switched off (Settings > System > Languages > Spell checker)."
+        val info = tsm.currentSpellCheckerInfo ?: return "No spell checker is chosen (Settings > System > Languages > Spell checker)."
+        val name = info.loadLabel(appContext.packageManager).toString()
+        val isOurs = info.packageName == appContext.packageName
+        return if (isOurs) {
+            "Spell checker in use: $name. That is FlorisBoard's own, which knows almost no words; choose Gboard's or Android's instead."
+        } else {
+            "Spell checker in use: $name."
+        }
+    }
+
+    /** Asks the spell checker about [word] directly and describes the answer, for testing. */
+    suspend fun test(word: String, locale: Locale): String {
+        val tsm = appContext.getSystemService(TextServicesManager::class.java) ?: return "No spell checker service."
+        val result = CompletableDeferred<String>()
+        val testListener = object : SpellCheckerSession.SpellCheckerSessionListener {
+            override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) = Unit
+            override fun onGetSentenceSuggestions(results: Array<out SentenceSuggestionsInfo>?) {
+                val sentence = results?.firstOrNull()
+                if (sentence == null || sentence.suggestionsCount == 0) {
+                    result.complete("\"$word\": the spell checker answered with nothing.")
+                    return
+                }
+                val info = sentence.getSuggestionsInfoAt(0)
+                val a = info.suggestionsAttributes
+                val known = a and SuggestionsInfo.RESULT_ATTR_IN_THE_DICTIONARY != 0
+                val typo = a and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO != 0
+                val sure = a and SuggestionsInfo.RESULT_ATTR_HAS_RECOMMENDED_SUGGESTIONS != 0
+                val list = (0 until maxOf(0, info.suggestionsCount)).mapNotNull { info.getSuggestionAt(it) }
+                val fix = pickFix(word, info)
+                result.complete(
+                    "\"$word\": " + when {
+                        known -> "it knows this word."
+                        !typo -> "it doesn't flag it as a typo."
+                        else -> "typo" + (if (sure) ", confident" else "") +
+                            "; suggests ${list.joinToString().ifEmpty { "nothing" }}"
+                    } + (fix?.let { ". Autocorrect would type \"$it\"." } ?: ". Autocorrect would leave it.")
+                )
+            }
+        }
+        val s = runCatching { tsm.newSpellCheckerSession(null, locale, testListener, true) }.getOrNull()
+            ?: return "Couldn't open the spell checker (it may be off)."
+        return try {
+            s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, 1)), 3)
+            withTimeoutOrNull(4_000) { result.await() } ?: "\"$word\": no answer from the spell checker within 4 seconds."
+        } finally {
+            s.close()
+        }
     }
 
     /** Call on backspace. Returns true if it undid a correction (and the backspace is used up). */
