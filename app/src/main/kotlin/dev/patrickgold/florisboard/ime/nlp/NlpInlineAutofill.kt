@@ -64,14 +64,23 @@ object NlpInlineAutofill {
         }
 
         scope.launch {
-            val size = Size(ViewGroup.LayoutParams.WRAP_CONTENT, suggestionsChipHeightPx)
+            // The chip height can still be 0 (or stale) when suggestions arrive before the smartbar
+            // is measured; Android 17 then rejects the size and the whole keyboard crashed.
+            // Fall back to wrap_content, and never let one bad suggestion take the IME down.
+            val height = suggestionsChipHeightPx.takeIf { it > 0 } ?: ViewGroup.LayoutParams.WRAP_CONTENT
+            val size = Size(ViewGroup.LayoutParams.WRAP_CONTENT, height)
             val latch = CountDownLatch(rawSuggestions.size)
             val suggestionsArray = Array<NlpInlineAutofillSuggestion?>(rawSuggestions.size) { null }
 
             flogInfo { "showInlineSuggestions: [${sequenceId}] start inflating suggestions" }
             for ((index, rawSuggestion) in rawSuggestions.withIndex()) {
-                rawSuggestion.inflate(context, size, context.mainExecutor) { view ->
-                    suggestionsArray[index] = NlpInlineAutofillSuggestion(rawSuggestion.info, view)
+                try {
+                    rawSuggestion.inflate(context, size, context.mainExecutor) { view ->
+                        suggestionsArray[index] = NlpInlineAutofillSuggestion(rawSuggestion.info, view)
+                        latch.countDown()
+                    }
+                } catch (e: IllegalArgumentException) {
+                    flogWarning { "showInlineSuggestions: [${sequenceId}] could not inflate suggestion: $e" }
                     latch.countDown()
                 }
             }
