@@ -52,6 +52,9 @@ CLEANUP_MODE = os.environ.get("CLEANUP_MODE", "claude").strip().lower()
 MAX_BYTES = int(os.environ.get("MAX_AUDIO_BYTES", str(8 * 1024 * 1024)))
 MAX_SECONDS = float(os.environ.get("MAX_AUDIO_SECONDS", "120"))
 COUNTS_FILE = os.environ.get("DICTATE_COUNTS", "/var/lib/dictate/counts.csv")
+# The user's own word list (names, jargon), one per line, spelled and capitalised as wanted.
+# Lives only on the server - never in the repo - and is re-read whenever it changes.
+KEYTERMS_FILE = os.environ.get("DICTATE_KEYTERMS", os.path.join(BASE, "keyterms.txt"))
 SAMPLE_RATE = 16000
 
 log = logging.getLogger("dictate")
@@ -62,6 +65,29 @@ _model_path, _model_arch = mv.get_model_for_language(
 stt = Transcriber(model_path=_model_path, model_arch=_model_arch)
 # One model shared by every request; feeding is serialised so two phones can't trip over it.
 stt_lock = threading.Lock()
+_keyterms_mtime = None
+
+
+def _refresh_keyterms():
+    """Point the model at the user's word list; cheap no-op unless the file changed."""
+    global _keyterms_mtime
+    try:
+        mtime = os.path.getmtime(KEYTERMS_FILE)
+    except OSError:
+        mtime = None
+    if mtime == _keyterms_mtime:
+        return
+    terms = []
+    if mtime is not None:
+        with open(KEYTERMS_FILE, encoding="utf-8") as f:
+            terms = [t.strip() for t in f if t.strip() and not t.lstrip().startswith("#")]
+    with stt_lock:
+        stt.set_keyterms(terms or None)
+    _keyterms_mtime = mtime
+    log.info("keyterms loaded count=%d", len(terms))
+
+
+_refresh_keyterms()
 
 _api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 claude = None
@@ -246,6 +272,7 @@ def healthz():
 
 @app.post("/v1/dictate/stream")
 async def dictate_stream(request: Request, cleanup: bool = True, user: str = Depends(auth)):
+    await run_in_threadpool(_refresh_keyterms)
     live = await run_in_threadpool(_LiveStream)
     received = 0
     try:
@@ -308,6 +335,7 @@ async def dictate(audio: UploadFile = File(...), cleanup: bool = Form(True),
     seconds = len(pcm) / SAMPLE_RATE
     if seconds > MAX_SECONDS:
         raise HTTPException(413, "clip too long")
+    await run_in_threadpool(_refresh_keyterms)
     text = await run_in_threadpool(_transcribe_whole, pcm)
     del pcm
     t_text = time.perf_counter()
