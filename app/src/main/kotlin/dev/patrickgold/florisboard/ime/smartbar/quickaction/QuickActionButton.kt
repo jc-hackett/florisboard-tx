@@ -17,14 +17,6 @@
 package dev.patrickgold.florisboard.ime.smartbar.quickaction
 
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -61,9 +53,6 @@ import org.florisboard.lib.snygg.SnyggSelector
 import org.florisboard.lib.snygg.ui.SnyggBox
 import org.florisboard.lib.snygg.ui.SnyggIcon
 import org.florisboard.lib.snygg.ui.SnyggText
-
-private val DictateRed = Color(0xFFFF1744)
-private val DictateRedLive = Color(0xFFB71C1C)
 
 enum class QuickActionBarType {
     INTERACTIVE_BUTTON,
@@ -146,28 +135,18 @@ fun QuickActionButton(
                     is QuickAction.Dictate -> {
                         val dictationManager by context.dictationManager()
                         val dictationState by dictationManager.state.collectAsState()
-                        // Always bright red, whatever the theme, so the one key that sends
-                        // audio off the phone is unmistakable. Darker red while recording.
-                        Box(
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .size(32.dp)
-                                .background(
-                                    color = if (dictationState == DictationState.RECORDING) DictateRedLive else DictateRed,
-                                    shape = CircleShape,
-                                ),
-                            contentAlignment = Alignment.Center,
+                        SnyggBox(
+                            elementName = "$elementName-icon",
+                            attributes = attributes,
+                            selector = selector,
                         ) {
-                            Icon(
+                            SnyggIcon(
                                 imageVector = when (dictationState) {
                                     DictationState.RECORDING -> Icons.Default.StopCircle
                                     DictationState.WORKING -> Icons.Default.HourglassTop
                                     DictationState.ERROR -> Icons.Default.MicOff
                                     DictationState.IDLE -> Icons.Default.Mic
                                 },
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }

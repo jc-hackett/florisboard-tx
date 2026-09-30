@@ -75,12 +75,12 @@
     "foreground": "var(--on-surface)"
   },
   "key[code=10]": {
-    "background": "var(--primary)",
-    "foreground": "var(--on-surface)"
+    "background": "#FF1744",
+    "foreground": "#FFFFFF"
   },
   "key[code=10]:pressed": {
-    "background": "var(--primary-variant)",
-    "foreground": "var(--on-surface)"
+    "background": "#B71C1C",
+    "foreground": "#FFFFFF"
   },
   "key[code=32]": {
     "background": "var(--surface)",
