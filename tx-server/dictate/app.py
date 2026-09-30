@@ -42,6 +42,7 @@ from moonshine_voice import Transcriber
 from spacy.lang.en.stop_words import STOP_WORDS
 
 import deid
+import spoken
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 TOKENS_FILE = os.environ.get("DICTATE_TOKENS", os.path.join(BASE, "tokens"))
@@ -228,10 +229,10 @@ def _local_tidy(text: str) -> str:
     """Instant, on-box tidy: drop um/uh-type fillers, fix spacing and the first capital.
     Used when Claude cleanup is off, fails or is rejected."""
     t = _FILLER.sub("", text)
-    t = re.sub(r"\s+([,.?!])", r"\1", t)
-    t = re.sub(r"\s{2,}", " ", t).strip(" ,")
+    t = re.sub(r"[ \t]+([,.?!])", r"\1", t)
+    t = re.sub(r"[ \t]{2,}", " ", t).strip(" ,")  # [ \t], not \s: keep spoken new lines
     # A sentence that now starts mid-way ("so the weather...") after a dropped filler.
-    t = re.sub(r"(^|[.?!]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
+    t = re.sub(r"(^|[.?!]\s+|\n)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
     return t
 
 
@@ -292,7 +293,7 @@ def _cleanup(text: str):
 async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: float, t_text: float):
     """Shared tail: optional Claude cleanup, logging, counts, response."""
     cleaned, redactions, status = False, 0, "local"
-    text = _apply_aliases(text)
+    text = spoken.apply(_apply_aliases(text))  # "exclamation point" -> "!" etc.
     raw, text = text, _local_tidy(text)
     if claude and cleanup and CLEANUP_MODE == "claude" and raw:
         try:

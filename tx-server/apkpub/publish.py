@@ -31,6 +31,7 @@ ARTIFACT = "app-debug.apk"
 PACKAGE = "me.jchackett.florisboardtx"
 OUT = "/srv/dictate-app"
 KEYDIR = "/root/apk-signing"
+SERVER_ONLY = ("tx-server/", ".github/", "README", "docs/")
 
 
 def get_json(url):
@@ -48,12 +49,20 @@ def main():
     run = runs[0]
     sha = run["head_sha"]
     latest_path = os.path.join(OUT, "latest.json")
+    published = None
     try:
         with open(latest_path) as f:
-            if json.load(f).get("build") == sha:
-                return  # already published
+            published = json.load(f).get("build")
     except (OSError, ValueError):
         pass
+    if published == sha:
+        return  # already published
+    if published:
+        # Server-only commits (tx-server/, CI config, docs) don't change the app: don't offer the
+        # phone an "update" that changes nothing. The next real app change includes them anyway.
+        changed = get_json(f"https://api.github.com/repos/{REPO}/compare/{published}...{sha}").get("files", [])
+        if changed and all(f["filename"].startswith(SERVER_ONLY) for f in changed):
+            return
 
     with tempfile.TemporaryDirectory() as tmp:
         zpath = os.path.join(tmp, "a.zip")
