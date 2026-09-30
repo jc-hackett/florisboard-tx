@@ -51,6 +51,7 @@ fun DictationScreen() = FlorisScreen {
     val settings = remember { DictationSettings(context) }
     var serverUrl by remember { mutableStateOf(settings.serverUrl) }
     var token by remember { mutableStateOf(settings.token) }
+    var words by remember { mutableStateOf(settings.words) }
     var saved by remember { mutableStateOf(false) }
     var micGranted by remember {
         mutableStateOf(
@@ -98,10 +99,22 @@ fun DictationScreen() = FlorisScreen {
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        OutlinedTextField(
+            value = words,
+            onValueChange = { words = it; saved = false },
+            label = { Text(stringRes(R.string.dictation__words)) },
+            supportingText = { Text(stringRes(R.string.dictation__words_hint)) },
+            minLines = 4,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
         Button(
             onClick = {
                 settings.serverUrl = serverUrl
                 settings.token = token
+                settings.words = words
                 saved = true
             },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

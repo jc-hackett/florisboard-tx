@@ -36,9 +36,23 @@ class DictationSettings(context: Context) {
         get() = prefs.getString(KEY_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TOKEN, value.trim()).apply()
 
+    /**
+     * The user's own words (names, jargon), one per line, spelled and capitalised as they should
+     * appear. Sent with each dictation so the speech model leans towards them. Kept here, out of
+     * backups, because it tends to hold names.
+     */
+    var words: String
+        get() = prefs.getString(KEY_WORDS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WORDS, value.trim()).apply()
+
+    val wordList: List<String>
+        get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
+
     companion object {
         private const val FILE = "dictation"
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
+        private const val KEY_WORDS = "words"
+        const val MAX_WORDS = 200
     }
 }

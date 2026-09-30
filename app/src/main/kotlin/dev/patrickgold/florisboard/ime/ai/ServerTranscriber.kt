@@ -38,6 +38,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlin.coroutines.coroutineContext
 
 /** A dictation failure with a message fit to show the user in a toast. */
@@ -60,6 +61,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         val settings = DictationSettings(appContext)
         val server = settings.serverUrl
         val token = settings.token
+        val words = settings.wordList
         if (server.isBlank() || token.isBlank()) throw DictationException(R.string.dictation__error_not_set_up)
         if (!server.startsWith("https://")) throw DictationException(R.string.dictation__error_not_https)
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO)
@@ -73,7 +75,7 @@ class ServerTranscriber(context: Context) : Transcriber {
                 // Recording never waits on the network: chunks queue here while the connection
                 // is still being set up, and the uploader drains them as fast as it can.
                 val chunks = Channel<ByteArray>(Channel.UNLIMITED)
-                val upload = async { stream(server, token, chunks) }
+                val upload = async { stream(server, token, words, chunks) }
                 val recorded = try {
                     record(stillRecording) { chunks.trySend(it) }
                 } finally {
@@ -123,7 +125,12 @@ class ServerTranscriber(context: Context) : Transcriber {
         return total
     }
 
-    private suspend fun stream(server: String, token: String, chunks: ReceiveChannel<ByteArray>): String? {
+    private suspend fun stream(
+        server: String,
+        token: String,
+        words: List<String>,
+        chunks: ReceiveChannel<ByteArray>,
+    ): String? {
         val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
@@ -133,6 +140,9 @@ class ServerTranscriber(context: Context) : Transcriber {
             useCaches = false
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Content-Type", "application/octet-stream")
+            if (words.isNotEmpty()) {
+                setRequestProperty("X-Dictate-Words", URLEncoder.encode(words.joinToString("\n"), "UTF-8"))
+            }
         }
         // A cancelled dictation must drop the connection at once, even mid-write.
         coroutineContext[Job]?.invokeOnCompletion { cause -> if (cause != null) conn.disconnect() }

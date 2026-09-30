@@ -30,6 +30,7 @@ import re
 import threading
 import time
 import wave
+from urllib.parse import unquote_plus
 
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -65,26 +66,42 @@ _model_path, _model_arch = mv.get_model_for_language(
 stt = Transcriber(model_path=_model_path, model_arch=_model_arch)
 # One model shared by every request; feeding is serialised so two phones can't trip over it.
 stt_lock = threading.Lock()
-_keyterms_mtime = None
+MAX_TERMS = 200
+_file_terms_mtime = None
+_file_terms: list = []
+_active_terms = None
 
 
-def _refresh_keyterms():
-    """Point the model at the user's word list; cheap no-op unless the file changed."""
-    global _keyterms_mtime
+def _refresh_keyterms(phone_terms=()):
+    """Point the model at the word list: the server file plus whatever the phone sent (its
+    Settings > Dictation list). Cheap no-op unless the combined list changed. With one shared
+    model the list is global, which is fine while each server serves one person."""
+    global _file_terms_mtime, _file_terms, _active_terms
     try:
         mtime = os.path.getmtime(KEYTERMS_FILE)
     except OSError:
         mtime = None
-    if mtime == _keyterms_mtime:
+    if mtime != _file_terms_mtime:
+        _file_terms = []
+        if mtime is not None:
+            with open(KEYTERMS_FILE, encoding="utf-8") as f:
+                _file_terms = [t.strip() for t in f if t.strip() and not t.lstrip().startswith("#")]
+        _file_terms_mtime = mtime
+    terms = list(dict.fromkeys([*_file_terms, *phone_terms]))[:MAX_TERMS]
+    if terms == _active_terms:
         return
-    terms = []
-    if mtime is not None:
-        with open(KEYTERMS_FILE, encoding="utf-8") as f:
-            terms = [t.strip() for t in f if t.strip() and not t.lstrip().startswith("#")]
     with stt_lock:
         stt.set_keyterms(terms or None)
-    _keyterms_mtime = mtime
-    log.info("keyterms loaded count=%d", len(terms))
+    _active_terms = terms
+    log.info("keyterms set count=%d", len(terms))  # the count only, never the words
+
+
+def _phone_terms(request: Request):
+    raw = request.headers.get("x-dictate-words", "")
+    if not raw:
+        return []
+    words = [w.strip() for w in unquote_plus(raw).splitlines()]
+    return [w for w in words if w and len(w) <= 60][:MAX_TERMS]
 
 
 _refresh_keyterms()
@@ -272,7 +289,7 @@ def healthz():
 
 @app.post("/v1/dictate/stream")
 async def dictate_stream(request: Request, cleanup: bool = True, user: str = Depends(auth)):
-    await run_in_threadpool(_refresh_keyterms)
+    await run_in_threadpool(_refresh_keyterms, _phone_terms(request))
     live = await run_in_threadpool(_LiveStream)
     received = 0
     try:

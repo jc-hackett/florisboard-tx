@@ -117,6 +117,8 @@
     <string name="dictation__error_server">Dictation: the server had a problem, try again</string>
     <string name="dictation__error_network">Dictation: could not reach the server</string>
     <string name="dictation__cancelled">Dictation cancelled</string>
+    <string name="dictation__words">Words to spell right</string>
+    <string name="dictation__words_hint">One per line, written exactly as you want them, e.g. names or terms you use often.</string>
     <string name="quick_action__floating_window_mode" comment="Please mind the limited available space for the quick action strings">Floating</string>
     <string name="quick_action__floating_window_mode__tooltip">Toggle floating keyboard window mode</string>
     <string name="quick_action__one_handed_mode" comment="Please mind the limited available space for the quick action strings">One-handed</string>
