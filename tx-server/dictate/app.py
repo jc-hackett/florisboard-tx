@@ -302,7 +302,34 @@ TIDY_SYSTEM = (
     "as written, the same number of times, and do not guess what they stand for.\n"
     "Reply with the corrected text only - no tags, quotes or commentary."
 )
-TIDY_MAX_CHARS = 6000
+# Guard rails on the paid Claude step (set 2026-10-01; shared with Tony and Jeoff). Counts live in
+# memory and reset on restart, which is fine for keeping spend sane rather than exact.
+TIDY_MAX_CHARS = int(os.environ.get("TIDY_MAX_CHARS", "2000"))      # ~300 words per cleanup
+TIDY_PER_MINUTE = int(os.environ.get("TIDY_PER_MINUTE", "10"))
+TIDY_PER_DAY = int(os.environ.get("TIDY_PER_DAY", "300"))
+_tidy_recent: dict = {}   # user -> list of request times in the last minute
+_tidy_daily: dict = {}    # user -> (date, count)
+_tidy_cache: dict = {}    # sha256(user + text) -> (time, cleaned); repeats are free
+_tidy_lock = threading.Lock()
+
+
+def _tidy_allowed(user: str) -> str | None:
+    """None if this user may make another Claude call now, else the reason they can't."""
+    now = time.time()
+    today = time.strftime("%Y-%m-%d")
+    with _tidy_lock:
+        recent = [t for t in _tidy_recent.get(user, []) if now - t < 60]
+        day, count = _tidy_daily.get(user, (today, 0))
+        if day != today:
+            day, count = today, 0
+        if len(recent) >= TIDY_PER_MINUTE:
+            return "too many cleanups this minute, try again shortly"
+        if count >= TIDY_PER_DAY:
+            return "daily AI cleanup limit reached"
+        recent.append(now)
+        _tidy_recent[user] = recent
+        _tidy_daily[user] = (day, count + 1)
+    return None
 
 
 @app.post("/v1/tidy")
@@ -318,8 +345,18 @@ async def tidy(request: Request, user: str = Depends(auth)):
     if not text.strip():
         raise HTTPException(400, "nothing to clean up")
     if len(text) > TIDY_MAX_CHARS:
-        raise HTTPException(413, "too long for AI cleanup")
+        log.info("user=%s status=tidy_too_long chars=%d", user, len(text))
+        raise HTTPException(413, f"too long for AI cleanup (max about {TIDY_MAX_CHARS // 6} words)")
     t0 = time.perf_counter()
+    key = hashlib.sha256(f"{user}\0{text}".encode()).hexdigest()
+    cached = _tidy_cache.get(key)
+    if cached and time.time() - cached[0] < 600:
+        log.info("user=%s status=tidy_cached chars=%d", user, len(text))
+        return {"text": cached[1], "changed": cached[1] != text, "ms": 0}
+    refusal = _tidy_allowed(user)
+    if refusal:
+        log.info("user=%s status=tidy_limited reason=%s", user, refusal.split(",")[0].replace(" ", "_"))
+        raise HTTPException(429, refusal)
     status, redactions, out = "tidy_rejected", 0, text
     try:
         result, redactions = await run_in_threadpool(_cleanup, text, TIDY_SYSTEM, "text", 4096)
@@ -331,6 +368,10 @@ async def tidy(request: Request, user: str = Depends(auth)):
     log.info("user=%s status=%s chars=%d redactions=%d tidy_ms=%d", user, status, len(text), redactions, ms)
     if status.startswith("tidy_error"):
         raise HTTPException(502, "AI cleanup failed, try again")
+    with _tidy_lock:
+        if len(_tidy_cache) > 500:
+            _tidy_cache.clear()
+        _tidy_cache[key] = (time.time(), out)  # holds text in memory only, 10 minutes, never on disk
     return {"text": out, "changed": out != text, "ms": ms}
 
 
