@@ -16,12 +16,7 @@
 
 package dev.patrickgold.florisboard.ime.ai
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
-import android.os.PersistableBundle
 import dev.patrickgold.florisboard.FlorisImeService
 import dev.patrickgold.florisboard.ime.editor.FlorisEditorInfo
 import dev.patrickgold.florisboard.ime.editor.InputAttributes
@@ -41,8 +36,9 @@ import java.net.URL
 /**
  * The smartbar's "AI cleanup" button: proofreads the selected text, or the whole field if nothing
  * is selected, through the user's own server (POST /v1/tidy), which de-identifies it before Claude
- * sees it and restores the details afterwards. The original is put on the clipboard (flagged
- * sensitive) before anything is replaced, so it can always be pasted back.
+ * sees it and restores the details afterwards. Tapping again within a minute, while the cleaned
+ * text is untouched, puts the original back. No clipboard copy: Android pops its clipboard overlay
+ * on every copy, and the user found it intrusive (2026-10-01).
  *
  * Costs a little Claude usage per tap, so it only ever runs on an explicit tap. Inert in incognito
  * mode and in password fields.
@@ -50,6 +46,10 @@ import java.net.URL
 class AiCleanup private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    /** The last cleanup, for tap-again-to-undo: what we wrote and what it replaced. */
+    private data class Done(val cleaned: String, val original: String, val at: Long)
+    private var lastDone: Done? = null
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
@@ -62,6 +62,7 @@ class AiCleanup private constructor(context: Context) {
             return toast("AI cleanup: add the server address and token in Settings, Dictation")
         }
         val ic = FlorisImeService.currentInputConnection() ?: return
+        if (undoIfJustCleaned(ic)) return
         val selected = ic.getSelectedText(0)?.toString().orEmpty()
         val before: String
         val after: String
@@ -93,12 +94,12 @@ class AiCleanup private constructor(context: Context) {
                     val nowAfter = ic2.getTextAfterCursor(MAX_CHARS, 0)?.toString().orEmpty()
                     if (nowBefore != before || nowAfter != after) return@launch toast("AI cleanup: text changed, not applied")
                 }
-                copyOriginal(original)
                 ic2.beginBatchEdit()
                 if (selected.isEmpty()) ic2.deleteSurroundingText(before.length, after.length)
                 ic2.commitText(cleaned, 1)
                 ic2.endBatchEdit()
-                toast("Cleaned up. Your original is on the clipboard.")
+                lastDone = Done(cleaned, original, System.currentTimeMillis())
+                toast("Cleaned up. Tap again to undo.")
             } catch (e: Exception) {
                 toast("AI cleanup failed: ${e.message ?: "no connection"}")
             } finally {
@@ -131,15 +132,19 @@ class AiCleanup private constructor(context: Context) {
         }
     }
 
-    private fun copyOriginal(text: String) {
-        val clipboard = appContext.getSystemService(ClipboardManager::class.java) ?: return
-        val clip = ClipData.newPlainText("Before AI cleanup", text)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            clip.description.extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
-        }
-        runCatching { clipboard.setPrimaryClip(clip) }
+    /** If the text just before the cursor is exactly what the last cleanup wrote, restore it. */
+    private fun undoIfJustCleaned(ic: android.view.inputmethod.InputConnection): Boolean {
+        val done = lastDone ?: return false
+        lastDone = null
+        if (System.currentTimeMillis() - done.at > UNDO_WINDOW_MS) return false
+        val before = ic.getTextBeforeCursor(done.cleaned.length, 0)?.toString() ?: return false
+        if (before != done.cleaned) return false
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(done.cleaned.length, 0)
+        ic.commitText(done.original, 1)
+        ic.endBatchEdit()
+        toast("Original put back.")
+        return true
     }
 
     private fun toast(text: String) {
@@ -148,6 +153,7 @@ class AiCleanup private constructor(context: Context) {
 
     companion object {
         private const val MAX_CHARS = 6000
+        private const val UNDO_WINDOW_MS = 60_000L
         private val PASSWORDS = setOf(
             InputAttributes.Variation.PASSWORD,
             InputAttributes.Variation.VISIBLE_PASSWORD,

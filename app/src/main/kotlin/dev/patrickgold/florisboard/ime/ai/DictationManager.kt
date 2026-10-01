@@ -166,7 +166,8 @@ class DictationManager(context: Context) {
                 withContext(Dispatchers.Main) {
                     val editorInstance by appContext.editorInstance()
                     editorInstance.commitText(text)
-                    copyToClipboard(text.trim())
+                    // No clipboard copy: Android pops its clipboard overlay on every copy, and the
+                    // user found that intrusive (2026-10-01).
                 }
             }
             _state.value = DictationState.IDLE
