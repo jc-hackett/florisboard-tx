@@ -86,16 +86,22 @@ class AutoCorrector(context: Context) {
     /** Call just before the space is committed, with the text before the cursor at that moment. */
     fun onSpace(textBeforeCursor: String, editorInfo: FlorisEditorInfo, locale: Locale) {
         lastCorrection = null
-        if (!settings.autocorrect || !isEligibleField(editorInfo)) return
-        val word = WORD_AT_END.find(textBeforeCursor)?.value ?: return
+        if (!settings.autocorrect) return note("space pressed, but autocorrect is off")
+        if (!isEligibleField(editorInfo)) {
+            val a = editorInfo.inputAttributes
+            return note("space pressed in a field it skips (${a.type}/${a.variation})")
+        }
+        val word = WORD_AT_END.find(textBeforeCursor)?.value
+            ?: return note("space pressed, no word found before the cursor (saw ${textBeforeCursor.length} chars)")
         // "i", "i'm", "i've"... -> "I", "I'm": no spell checker needed. Runs after the space lands.
         if (word == "i" || word.startsWith("i'")) {
             val fixed = "I" + word.drop(1)
             mainHandler.post { apply(word, fixed) }
             return
         }
-        if (!isEligibleWord(word)) return
-        val s = sessionFor(locale) ?: return
+        if (!isEligibleWord(word)) return note("\"$word\": skipped (short, capitals, refused, or on your word list)")
+        val s = sessionFor(locale) ?: return note("\"$word\": couldn't open the spell checker for $locale")
+        note("\"$word\": asked the spell checker…")
         sequence += 1
         pending[sequence] = word
         while (pending.size > 8) pending.remove(pending.keys.first())
@@ -208,15 +214,16 @@ class AutoCorrector(context: Context) {
         override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) = Unit
 
         override fun onGetSentenceSuggestions(results: Array<out SentenceSuggestionsInfo>?) {
-            val sentence = results?.firstOrNull() ?: return
-            if (sentence.suggestionsCount == 0) return
+            val sentence = results?.firstOrNull() ?: return note("spell checker answered with nothing")
+            if (sentence.suggestionsCount == 0) return note("spell checker answered with no results")
             val info = sentence.getSuggestionsInfoAt(0)
             // Some checkers don't echo the sequence back; then it can only be the latest word.
             // Either way apply() re-checks that the text still ends with exactly "word ".
-            val word = pending.remove(info.sequence) ?: pending[sequence] ?: return
+            val word = pending.remove(info.sequence) ?: pending[sequence] ?: return note("answer arrived for a word it lost track of")
             // Choosing a fix can mean checking thousands of spellings; keep it off the main thread.
             worker.execute {
-                val fix = pickFix(word, info) ?: return@execute
+                val fix = pickFix(word, info)
+                    ?: return@execute note("\"$word\": left as is (${describe(info)})")
                 mainHandler.post { apply(word, fix) }
             }
         }
@@ -256,13 +263,27 @@ class AutoCorrector(context: Context) {
         val ic = FlorisImeService.currentInputConnection() ?: return
         val before = ic.getTextBeforeCursor(word.length + 2, 0)?.toString() ?: return
         // Only if nothing has changed since the space: text must end with exactly "word ".
-        if (!before.endsWith("$word ")) return
+        if (!before.endsWith("$word ")) return note("\"$word\" -> \"$fix\": text changed before the fix landed")
         if (before.length > word.length + 1 && before[before.length - word.length - 2].isLetterOrDigit()) return
         ic.beginBatchEdit()
         ic.deleteSurroundingText(word.length + 1, 0)
         ic.commitText("$fix ", 1)
         ic.endBatchEdit()
         lastCorrection = word to fix
+        note("\"$word\" -> \"$fix\": fixed")
+    }
+
+    private fun describe(info: SuggestionsInfo): String {
+        val a = info.suggestionsAttributes
+        return when {
+            a and SuggestionsInfo.RESULT_ATTR_IN_THE_DICTIONARY != 0 -> "the spell checker knows it"
+            a and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO == 0 -> "the spell checker didn't call it a typo"
+            else -> "no close, more common word"
+        }
+    }
+
+    private fun note(text: String) {
+        lastEvent = text
     }
 
     private fun matchCase(original: String, fix: String): String {
@@ -307,6 +328,10 @@ class AutoCorrector(context: Context) {
     }
 
     companion object {
+        /** What happened to the last word, in plain words; shown in Settings > Dictation. */
+        @Volatile var lastEvent: String = "nothing yet since the keyboard started"
+            private set
+
         private const val ALPHABET = "abcdefghijklmnopqrstuvwxyz'"
 
         /** The last run of letters (and inner apostrophes) right before the cursor. */

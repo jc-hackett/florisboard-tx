@@ -60,7 +60,12 @@ fun DictationScreen() = FlorisScreen {
     var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var saved by remember { mutableStateOf(false) }
     val autoCorrector = remember { AutoCorrector(context) }
-    var spellStatus by remember { mutableStateOf(autoCorrector.spellCheckerStatus() + " Tap to test with \"teh\" and \"spellchdcker\".") }
+    var spellStatus by remember {
+        mutableStateOf(
+            autoCorrector.spellCheckerStatus() + "\nLast word typed: " + AutoCorrector.lastEvent +
+                "\nTap to test with \"teh\" and \"spellchdcker\"."
+        )
+    }
     val updater = remember { AppUpdater(context) }
     val scope = rememberCoroutineScope()
     var release by remember { mutableStateOf<AppUpdater.Release?>(null) }
@@ -155,6 +160,7 @@ fun DictationScreen() = FlorisScreen {
                 scope.launch {
                     val locale = java.util.Locale.getDefault()
                     spellStatus = autoCorrector.spellCheckerStatus() + "\n" +
+                        "Last word typed: " + AutoCorrector.lastEvent + "\n" +
                         autoCorrector.test("teh", locale) + "\n" + autoCorrector.test("spellchdcker", locale)
                 }
             },
