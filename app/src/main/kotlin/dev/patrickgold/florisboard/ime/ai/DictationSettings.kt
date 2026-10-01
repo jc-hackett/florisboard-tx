@@ -50,6 +50,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTOCORRECT, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTOCORRECT, value).apply()
 
+    /** AI cleanup of each sentence when a double-space types its period (uses Claude usage). */
+    var autoCleanupOnPeriod: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CLEANUP, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_CLEANUP, value).apply()
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -59,6 +64,7 @@ class DictationSettings(context: Context) {
         private const val KEY_TOKEN = "token"
         private const val KEY_WORDS = "words"
         private const val KEY_AUTOCORRECT = "autocorrect"
+        private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
         const val MAX_WORDS = 200
     }
 }

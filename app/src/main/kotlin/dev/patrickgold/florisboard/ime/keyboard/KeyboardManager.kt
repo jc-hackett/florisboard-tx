@@ -29,6 +29,7 @@ import dev.patrickgold.florisboard.app.FlorisPreferenceStore
 import dev.patrickgold.florisboard.appContext
 import dev.patrickgold.florisboard.clipboardManager
 import dev.patrickgold.florisboard.dictationManager
+import dev.patrickgold.florisboard.ime.ai.AiCleanup
 import dev.patrickgold.florisboard.ime.ai.AutoCorrector
 import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import dev.patrickgold.florisboard.editorInstance
@@ -595,6 +596,10 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
                 if (text.length == 2 && DoubleSpacePeriodMatcher.matches(text)) {
                     editorInstance.deleteBackwards(OperationUnit.CHARACTERS)
                     editorInstance.commitText(". ")
+                    // florisboard-tx: tidy the sentence that just ended, in the background.
+                    if (!activeState.isIncognitoMode) {
+                        AiCleanup.get(appContext).cleanSentenceJustEnded(editorInstance.activeInfo)
+                    }
                     return
                 }
             }

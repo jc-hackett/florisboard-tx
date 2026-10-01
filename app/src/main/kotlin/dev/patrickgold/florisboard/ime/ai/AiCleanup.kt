@@ -108,6 +108,55 @@ class AiCleanup private constructor(context: Context) {
         }
     }
 
+    /**
+     * Called right after a double-space has typed ". ": quietly cleans up the sentence that just
+     * ended, in the background, while the user keeps typing. The sentence is found again by its
+     * position when the answer arrives and replaced only if it is still exactly as it was, with
+     * the cursor kept where the user has got to. Off with Settings > Dictation's switch.
+     */
+    fun cleanSentenceJustEnded(editorInfo: FlorisEditorInfo) {
+        val settings = DictationSettings(appContext)
+        if (!settings.autoCleanupOnPeriod) return
+        if (editorInfo.inputAttributes.variation in PASSWORDS) return
+        if (settings.serverUrl.isBlank() || settings.token.isBlank()) return
+        val ic = FlorisImeService.currentInputConnection() ?: return
+        val et = ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) ?: return
+        if (et.startOffset != 0 || et.text == null) return
+        val full = et.text.toString()
+        val cursor = et.selectionStart
+        if (cursor < 3 || cursor > full.length || !full.substring(0, cursor).endsWith(". ")) return
+        // The sentence: from the previous sentence end (or line start) up to and including the ".".
+        val end = cursor - 1
+        val head = full.substring(0, end - 1)
+        val prevEnd = head.lastIndexOfAny(charArrayOf('.', '!', '?', '\n'))
+        var start = prevEnd + 1
+        while (start < end && full[start].isWhitespace()) start++
+        val sentence = full.substring(start, end)
+        if (sentence.length < 3 || sentence.length > MAX_CHARS) return
+
+        scope.launch {
+            val cleaned = try {
+                withContext(Dispatchers.IO) { request(settings.serverUrl, settings.token, sentence) }?.trim()
+            } catch (e: Exception) {
+                null
+            } ?: return@launch
+            if (cleaned == sentence || cleaned.isEmpty()) return@launch
+            val ic2 = FlorisImeService.currentInputConnection() ?: return@launch
+            val now = ic2.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) ?: return@launch
+            if (now.startOffset != 0 || now.text == null) return@launch
+            val text = now.text.toString()
+            if (text.length < end || text.substring(start, end) != sentence) return@launch // user changed it
+            val delta = cleaned.length - sentence.length
+            val newSelStart = if (now.selectionStart >= end) now.selectionStart + delta else now.selectionStart
+            val newSelEnd = if (now.selectionEnd >= end) now.selectionEnd + delta else now.selectionEnd
+            ic2.beginBatchEdit()
+            ic2.setSelection(start, end)
+            ic2.commitText(cleaned, 1)
+            ic2.setSelection(newSelStart, newSelEnd)
+            ic2.endBatchEdit()
+        }
+    }
+
     private fun request(server: String, token: String, text: String): String? {
         val conn = (URL(server.trimEnd('/') + "/v1/tidy").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"

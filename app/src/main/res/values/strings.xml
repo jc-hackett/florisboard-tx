@@ -121,6 +121,9 @@
     <string name="dictation__cancelled">Dictation cancelled</string>
     <string name="dictation__update__title">Keyboard updates</string>
     <string name="dictation__spellcheck__title">Spell checker (for autocorrect)</string>
+    <string name="dictation__auto_cleanup__title">AI cleanup after each sentence</string>
+    <string name="dictation__auto_cleanup__on">On. When a double space types a period, the sentence is proofread in the background (names hidden first; a little AI usage each time). Tap to turn off.</string>
+    <string name="dictation__auto_cleanup__off">Off. Tap to turn on.</string>
     <string name="dictation__autocorrect__title">Autocorrect while typing</string>
     <string name="dictation__autocorrect__on">On. Fixes clear typos when you press space, using the phone\'s own spell checker. Backspace right after undoes it. Tap to turn off.</string>
     <string name="dictation__autocorrect__off">Off. Tap to turn on.</string>
