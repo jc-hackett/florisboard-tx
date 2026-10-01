@@ -70,11 +70,11 @@ data class QuickActionArrangement(
         val Default = QuickActionArrangement(
             stickyAction = QuickAction.Dictate,
             dynamicActions = listOf(
+                // florisboard-tx (his layout, 2026-10-01): redo hidden, resize moved to the end so
+                // it lands under the "..." overflow.
                 QuickAction.InsertKey(TextKeyData.UNDO),
-                QuickAction.InsertKey(TextKeyData.REDO),
                 QuickAction.InsertKey(TextKeyData.SETTINGS),
                 QuickAction.InsertKey(TextKeyData.TOGGLE_FLOATING_WINDOW),
-                QuickAction.InsertKey(TextKeyData.TOGGLE_RESIZE_MODE),
                 QuickAction.InsertKey(TextKeyData.IME_UI_MODE_CLIPBOARD),
                 QuickAction.InsertKey(TextKeyData.IME_UI_MODE_MEDIA),
                 QuickAction.InsertKey(TextKeyData.TOGGLE_COMPACT_LAYOUT),
@@ -92,8 +92,10 @@ data class QuickActionArrangement(
                 QuickAction.InsertKey(TextKeyData.LANGUAGE_SWITCH),
                 QuickAction.InsertKey(TextKeyData.FORWARD_DELETE),
                 QuickAction.InsertKey(TextKeyData.IME_HIDE_UI),
+                QuickAction.InsertKey(TextKeyData.TOGGLE_RESIZE_MODE),
             ),
             hiddenActions = listOf(
+                QuickAction.InsertKey(TextKeyData.REDO),
             ),
         )
     }
