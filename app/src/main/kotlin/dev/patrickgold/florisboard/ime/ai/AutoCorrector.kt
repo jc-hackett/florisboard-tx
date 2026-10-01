@@ -95,7 +95,6 @@ class AutoCorrector(context: Context) {
             return
         }
         if (!isEligibleWord(word)) return
-        if (word.lowercase() in words) return // a common word: nothing to fix
         val s = sessionFor(locale) ?: return
         sequence += 1
         pending[sequence] = word
@@ -239,10 +238,18 @@ class AutoCorrector(context: Context) {
         }
         val best = (fromChecker + local).distinct()
             .map { it to editDistance(lower, it) }
-            .filter { (c, d) -> d in 1..maxDist && c != lower }
-            .minWithOrNull(compareBy<Pair<String, Int>>({ it.second }, { -(words[it.first] ?: 0) }))
+            // The frequency list was built from real text and contains common typos too ("teh"),
+            // so being on it proves nothing; a fix must just be clearly more common than the typo.
+            .filter { (c, d) -> d in 1..maxDist && c != lower && (words[c] ?: 0) >= (words[lower]?.plus(20) ?: 0) }
+            // A missing apostrophe ("dont", "cant", "im") beats any other fix ("can", "i").
+            .minWithOrNull(compareBy<Pair<String, Int>>(
+                { if (it.first.replace("'", "") == lower) 0 else 1 },
+                { it.second },
+                { -(words[it.first] ?: 0) },
+            ))
             ?: return null
-        return matchCase(word, best.first)
+        val fix = matchCase(word, best.first)
+        return if (fix.startsWith("i'")) "I" + fix.drop(1) else fix  // "im" -> "I'm", not "i'm"
     }
 
     private fun apply(word: String, fix: String) {
