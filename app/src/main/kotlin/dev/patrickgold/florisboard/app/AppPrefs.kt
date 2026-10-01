@@ -684,11 +684,11 @@ abstract class FlorisPreferenceModel : PreferenceModel() {
         )
         val enabled = boolean(
             key = "suggestion__enabled",
-            default = false,
+            default = true, // florisboard-tx: word completion is real now (LatinLanguageProvider)
         )
         val displayMode = enum(
             key = "suggestion__display_mode",
-            default = CandidatesDisplayMode.DYNAMIC_SCROLLABLE,
+            default = CandidatesDisplayMode.CLASSIC, // florisboard-tx: three fixed slots, like Gboard
         )
         val blockPossiblyOffensive = boolean(
             key = "suggestion__block_possibly_offensive",

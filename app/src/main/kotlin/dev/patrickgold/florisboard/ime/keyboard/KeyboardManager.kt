@@ -569,12 +569,15 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
      * enabled by the user.
      */
     private fun handleSpace(data: KeyData) {
-        autoCorrector.onSpace(
-            textBeforeCursor = editorInstance.run { activeContent.getTextBeforeCursor(48) },
-            editorInfo = editorInstance.activeInfo,
-            locale = subtypeManager.activeSubtype.primaryLocale.base,
-        )
         val candidate = nlpManager.getAutoCommitCandidate()
+        if (candidate == null) {
+            // No completion to finish the word with: let autocorrect look at it instead.
+            autoCorrector.onSpace(
+                textBeforeCursor = editorInstance.run { activeContent.getTextBeforeCursor(48) },
+                editorInfo = editorInstance.activeInfo,
+                locale = subtypeManager.activeSubtype.primaryLocale.base,
+            )
+        }
         candidate?.let { commitCandidate(it) }
         if (prefs.keyboard.spaceBarSwitchesToCharacters.get()) {
             when (activeState.keyboardMode) {

@@ -24,6 +24,7 @@ import dev.patrickgold.florisboard.ime.nlp.SpellingProvider
 import dev.patrickgold.florisboard.ime.nlp.SpellingResult
 import dev.patrickgold.florisboard.ime.nlp.SuggestionCandidate
 import dev.patrickgold.florisboard.ime.nlp.SuggestionProvider
+import dev.patrickgold.florisboard.ime.nlp.WordSuggestionCandidate
 import dev.patrickgold.florisboard.lib.devtools.flogDebug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,6 +39,12 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         // Default user ID used for all subtypes, unless otherwise specified.
         // See `ime/core/Subtype.kt` Line 210 and 211 for the default usage
         const val ProviderId = "org.florisboard.nlp.providers.latin"
+
+        // florisboard-tx word completion (frequencies are 0-255; the list also holds common
+        // typos around 130-155, so "common word" starts above that).
+        private const val COMMON_WORD_FREQ = 160
+        private const val CONFIDENT_COMPLETION_FREQ = 170
+        private const val COMPLETION_LEAD = 5
     }
 
     private val appContext by context.appContext()
@@ -105,21 +112,51 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         allowPossiblyOffensive: Boolean,
         isPrivateSession: Boolean,
     ): List<SuggestionCandidate> {
-        return emptyList()
-        /*val word = content.composingText.ifBlank { "next" }
-        val suggestions = buildList {
-            for (n in 0 until maxCandidateCount) {
-                add(WordSuggestionCandidate(
-                    text = "$word$n",
-                    secondaryText = if (n % 2 == 1) "secondary" else null,
-                    confidence = 0.5,
-                    isEligibleForAutoCommit = false,//n == 0 && word.startsWith("auto"),
-                    // We set ourselves as the source provider so we can get notify events for our candidate
-                    sourceProvider = this@LatinLanguageProvider,
-                ))
+        // florisboard-tx: upstream left this as a stub returning nothing. Word completion from the
+        // bundled frequency list: the strip shows the typed word (if it is a common word) and the
+        // most frequent words that start with it. Space finishes the word only when the typed
+        // letters are not a common word themselves and one completion clearly leads, so "in"
+        // stays "in" while "tomo" becomes "tomorrow".
+        val typed = content.composingText
+        if (typed.isBlank() || typed.length > 40 || !typed.all { it.isLetter() || it == '\'' }) {
+            return emptyList()
+        }
+        val lower = typed.lowercase()
+        val count = maxCandidateCount.coerceIn(1, 3)
+        return wordData.withLock { data ->
+            val typedFreq = data[lower] ?: 0
+            val completions = data.entries.asSequence()
+                .filter { it.key.length > lower.length && it.key.startsWith(lower) }
+                .sortedByDescending { it.value }
+                .take(count + 1)
+                .toList()
+            val top = completions.firstOrNull()
+            val second = completions.getOrNull(1)
+            val autoFinish = top != null && lower.length >= 2 &&
+                typedFreq < COMMON_WORD_FREQ && top.value >= CONFIDENT_COMPLETION_FREQ &&
+                (second == null || top.value - second.value >= COMPLETION_LEAD)
+            buildList {
+                if (typedFreq >= COMMON_WORD_FREQ) {
+                    add(WordSuggestionCandidate(text = typed, confidence = typedFreq / 255.0,
+                        sourceProvider = this@LatinLanguageProvider))
+                }
+                completions.forEachIndexed { i, (word, freq) ->
+                    if (size >= count) return@forEachIndexed
+                    add(WordSuggestionCandidate(
+                        text = matchCase(typed, word),
+                        confidence = freq / 255.0,
+                        isEligibleForAutoCommit = i == 0 && autoFinish,
+                        sourceProvider = this@LatinLanguageProvider,
+                    ))
+                }
             }
         }
-        return suggestions*/
+    }
+
+    private fun matchCase(typed: String, word: String): String = when {
+        typed.length > 1 && typed.all { !it.isLetter() || it.isUpperCase() } -> word.uppercase()
+        typed.first().isUpperCase() -> word.replaceFirstChar { it.uppercaseChar() }
+        else -> word
     }
 
     override suspend fun notifySuggestionAccepted(subtype: Subtype, candidate: SuggestionCandidate) {
