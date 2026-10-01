@@ -334,6 +334,33 @@ async def tidy(request: Request, user: str = Depends(auth)):
     return {"text": out, "changed": out != text, "ms": ms}
 
 
+async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: float, t_text: float):
+    """Shared tail: optional Claude cleanup, logging, counts, response."""
+    cleaned, redactions, status = False, 0, "local"
+    text = spoken.apply(_apply_aliases(text))  # "exclamation point" -> "!" etc.
+    raw, text = text, _local_tidy(text)
+    if claude and cleanup and CLEANUP_MODE == "claude" and raw:
+        try:
+            result, redactions = await run_in_threadpool(_cleanup, raw)
+            if result:
+                text, cleaned, status = result, True, "cleaned"
+            else:
+                status = "cleanup_rejected"
+        except Exception as e:
+            status = f"cleanup_error:{type(e).__name__}"
+    t_done = time.perf_counter()
+
+    ms = {"stt_tail": round((t_text - t_heard) * 1000), "cleanup": round((t_done - t_text) * 1000),
+          "after_release": round((t_done - t_heard) * 1000)}
+    words = len(text.split())
+    log.info("user=%s status=%s audio_s=%.1f chars=%d words=%d redactions=%d stt_tail_ms=%d "
+             "cleanup_ms=%d after_release_ms=%d",
+             user, status, seconds, len(text), words, redactions, ms["stt_tail"], ms["cleanup"],
+             ms["after_release"])
+    _record_count(user, words, seconds, status)
+    return {"text": text, "cleaned": cleaned, "ms": ms}
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "stt": _model_arch.name.lower(),
