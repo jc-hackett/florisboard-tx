@@ -64,6 +64,21 @@ sealed class QuickAction {
         }
     }
 
+    /**
+     * AI cleanup: proofreads the selection (or the whole field) through the user's own server,
+     * de-identified, using a little Claude usage per tap. Inert in incognito mode.
+     */
+    @Serializable
+    @SerialName("ai_cleanup")
+    data object AiCleanup : QuickAction() {
+        override fun onPointerUp(context: Context) {
+            val keyboardManager by context.keyboardManager()
+            if (keyboardManager.activeState.isIncognitoMode) return
+            val editorInstance by context.editorInstance()
+            dev.patrickgold.florisboard.ime.ai.AiCleanup.get(context).run(editorInstance.activeInfo)
+        }
+    }
+
     @Serializable
     @SerialName("insert_key")
     data class InsertKey(val data: KeyData) : QuickAction() {
@@ -139,6 +154,7 @@ fun QuickAction.computeDisplayName(evaluator: ComputingEvaluator): String {
             else -> R.string.general__invalid_fatal
         })
         is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate)
+        is QuickAction.AiCleanup -> stringRes(R.string.quick_action__ai_cleanup)
         is QuickAction.InsertText -> data
     }
 }
@@ -180,6 +196,7 @@ fun QuickAction.computeTooltip(evaluator: ComputingEvaluator): String {
             else -> R.string.general__invalid_fatal
         })
         is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate__tooltip)
+        is QuickAction.AiCleanup -> stringRes(R.string.quick_action__ai_cleanup__tooltip)
         is QuickAction.InsertText -> "Insert text '$data'"
     }
 }

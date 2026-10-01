@@ -36,6 +36,7 @@ val QuickActionJsonConfig = Json(DefaultJsonConfig) {
             subclass(QuickAction.InsertKey::class, QuickAction.InsertKey.serializer())
             subclass(QuickAction.InsertText::class, QuickAction.InsertText.serializer())
             subclass(QuickAction.Dictate::class, QuickAction.Dictate.serializer())
+            subclass(QuickAction.AiCleanup::class, QuickAction.AiCleanup.serializer())
             defaultDeserializer { QuickAction.InsertKey.serializer() }
         }
     }

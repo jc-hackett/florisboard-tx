@@ -27,6 +27,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -147,6 +148,19 @@ fun QuickActionButton(
                                     DictationState.ERROR -> Icons.Default.MicOff
                                     DictationState.IDLE -> Icons.Default.Mic
                                 },
+                            )
+                        }
+                    }
+
+                    is QuickAction.AiCleanup -> {
+                        val busy by dev.patrickgold.florisboard.ime.ai.AiCleanup.get(context).busy.collectAsState()
+                        SnyggBox(
+                            elementName = "$elementName-icon",
+                            attributes = attributes,
+                            selector = selector,
+                        ) {
+                            SnyggIcon(
+                                imageVector = if (busy) Icons.Default.HourglassTop else Icons.Default.AutoFixHigh,
                             )
                         }
                     }

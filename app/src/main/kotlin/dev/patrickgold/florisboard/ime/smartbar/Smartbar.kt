@@ -59,6 +59,7 @@ import dev.patrickgold.florisboard.R
 import dev.patrickgold.florisboard.app.FlorisPreferenceStore
 import dev.patrickgold.florisboard.ime.keyboard.FlorisImeSizing
 import dev.patrickgold.florisboard.ime.nlp.NlpInlineAutofill
+import dev.patrickgold.florisboard.ime.smartbar.quickaction.QuickAction
 import dev.patrickgold.florisboard.ime.smartbar.quickaction.QuickActionButton
 import dev.patrickgold.florisboard.ime.smartbar.quickaction.QuickActionsRow
 import dev.patrickgold.florisboard.ime.smartbar.quickaction.ToggleOverflowPanelAction
@@ -295,6 +296,14 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
         }
 
         if (action != null) {
+            // florisboard-tx: AI cleanup sits right beside the dictation key.
+            if (action is QuickAction.Dictate) {
+                QuickActionButton(
+                    modifier = Modifier.padding(start = 4.dp),
+                    action = QuickAction.AiCleanup,
+                    evaluator = evaluator,
+                )
+            }
             QuickActionButton(
                 modifier = Modifier.padding(horizontal = 4.dp),
                 action = action,
