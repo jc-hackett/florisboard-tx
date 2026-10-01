@@ -28,6 +28,8 @@ import dev.patrickgold.florisboard.FlorisImeService
 import dev.patrickgold.florisboard.ime.editor.FlorisEditorInfo
 import dev.patrickgold.florisboard.ime.editor.InputAttributes
 import kotlinx.coroutines.CompletableDeferred
+import org.json.JSONObject
+import java.util.concurrent.Executors
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
@@ -36,8 +38,10 @@ import java.util.Locale
  *
  * FlorisBoard has no autocorrect of its own. When the user presses space, this asks the phone's
  * system spell checker (the one chosen in Android's Settings > Languages > Spell checker) about
- * the word just finished. If it looks like a typo and the checker has a confident fix, the word
- * is swapped for the fix. The space is typed first and the check runs afterwards, so typing never
+ * the word just finished. If the checker says it isn't a real word, the fix is chosen from the
+ * keyboard's own English frequency list (assets ime/dict/data.json): the closest common word,
+ * then the most common among equally close ones. Gboard's own suggestion order proved unhelpful
+ * ("teh" -> "tech" first), so it only decides "real word or not" and adds candidates. The space is typed first and the check runs afterwards, so typing never
  * waits; the swap only happens if the text still ends with exactly "word ".
  *
  * A backspace straight after a correction puts the original word back (and the swap is then left
@@ -64,17 +68,39 @@ class AutoCorrector(context: Context) {
     /** Words the user reverted this session; never corrected again. */
     private val refused = mutableSetOf<String>()
 
+    /** Common English words -> frequency (0-255), loaded once in the background. */
+    @Volatile private var words: Map<String, Int> = emptyMap()
+    private val worker = Executors.newSingleThreadExecutor()
+
+    init {
+        worker.execute {
+            words = runCatching {
+                val o = JSONObject(appContext.assets.open("ime/dict/data.json").bufferedReader().use { it.readText() })
+                val m = HashMap<String, Int>(o.length() * 2)
+                for (k in o.keys()) m[k] = o.optInt(k)
+                m
+            }.getOrDefault(emptyMap())
+        }
+    }
+
     /** Call just before the space is committed, with the text before the cursor at that moment. */
     fun onSpace(textBeforeCursor: String, editorInfo: FlorisEditorInfo, locale: Locale) {
         lastCorrection = null
         if (!settings.autocorrect || !isEligibleField(editorInfo)) return
         val word = WORD_AT_END.find(textBeforeCursor)?.value ?: return
+        // "i", "i'm", "i've"... -> "I", "I'm": no spell checker needed. Runs after the space lands.
+        if (word == "i" || word.startsWith("i'")) {
+            val fixed = "I" + word.drop(1)
+            mainHandler.post { apply(word, fixed) }
+            return
+        }
         if (!isEligibleWord(word)) return
+        if (word.lowercase() in words) return // a common word: nothing to fix
         val s = sessionFor(locale) ?: return
         sequence += 1
         pending[sequence] = word
         while (pending.size > 8) pending.remove(pending.keys.first())
-        runCatching { s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, sequence)), 3) }
+        runCatching { s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, sequence)), 10) }
     }
 
     /** Plain-words status of the phone's spell checker, for Settings > Dictation. */
@@ -127,7 +153,7 @@ class AutoCorrector(context: Context) {
         val s = runCatching { tsm.newSpellCheckerSession(null, locale, testListener, true) }.getOrNull()
             ?: return "Couldn't open the spell checker (it may be off)."
         return try {
-            s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, 1)), 3)
+            s.getSentenceSuggestions(arrayOf(TextInfo(word, 0, word.length, 0, 1)), 10)
             withTimeoutOrNull(4_000) { result.await() } ?: "\"$word\": no answer from the spell checker within 4 seconds."
         } finally {
             s.close()
@@ -189,8 +215,11 @@ class AutoCorrector(context: Context) {
             // Some checkers don't echo the sequence back; then it can only be the latest word.
             // Either way apply() re-checks that the text still ends with exactly "word ".
             val word = pending.remove(info.sequence) ?: pending[sequence] ?: return
-            val fix = pickFix(word, info) ?: return
-            mainHandler.post { apply(word, fix) }
+            // Choosing a fix can mean checking thousands of spellings; keep it off the main thread.
+            worker.execute {
+                val fix = pickFix(word, info) ?: return@execute
+                mainHandler.post { apply(word, fix) }
+            }
         }
     }
 
@@ -198,13 +227,22 @@ class AutoCorrector(context: Context) {
         val attrs = info.suggestionsAttributes
         if (attrs and SuggestionsInfo.RESULT_ATTR_IN_THE_DICTIONARY != 0) return null
         if (attrs and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO == 0) return null
-        if (info.suggestionsCount <= 0) return null
-        val top = info.getSuggestionAt(0)?.takeIf { it.isNotBlank() && !it.contains(' ') } ?: return null
-        if (top.equals(word, ignoreCase = true)) return null
-        val confident = attrs and SuggestionsInfo.RESULT_ATTR_HAS_RECOMMENDED_SUGGESTIONS != 0
-        val close = editDistance(word.lowercase(), top.lowercase()) <= if (word.length >= 6) 2 else 1
-        if (!confident && !close) return null
-        return matchCase(word, top)
+        val lower = word.lowercase()
+        val maxDist = if (word.length >= 4) 2 else 1
+        // Candidates: the checker's own suggestions, plus every common word one or two edits away.
+        val fromChecker = (0 until maxOf(0, info.suggestionsCount))
+            .mapNotNull { info.getSuggestionAt(it)?.lowercase() }
+            .filter { it.isNotBlank() && !it.contains(' ') }
+        val local = if (words.isEmpty()) emptySet() else {
+            val one = edits(lower).filterTo(HashSet()) { it in words }
+            if (one.isEmpty() && maxDist >= 2 && lower.length <= 12) edits(lower).flatMap { edits(it) }.filterTo(HashSet()) { it in words } else one
+        }
+        val best = (fromChecker + local).distinct()
+            .map { it to editDistance(lower, it) }
+            .filter { (c, d) -> d in 1..maxDist && c != lower }
+            .minWithOrNull(compareBy<Pair<String, Int>>({ it.second }, { -(words[it.first] ?: 0) }))
+            ?: return null
+        return matchCase(word, best.first)
     }
 
     private fun apply(word: String, fix: String) {
@@ -228,21 +266,42 @@ class AutoCorrector(context: Context) {
         }
     }
 
+    /** Edit distance where swapping two neighbouring letters counts as one edit ("teh" -> "the"). */
     private fun editDistance(a: String, b: String): Int {
-        val prev = IntArray(b.length + 1) { it }
-        val cur = IntArray(b.length + 1)
+        val d = Array(a.length + 1) { IntArray(b.length + 1) }
+        for (i in 0..a.length) d[i][0] = i
+        for (j in 0..b.length) d[0][j] = j
         for (i in 1..a.length) {
-            cur[0] = i
             for (j in 1..b.length) {
                 val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+                d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
+                    d[i][j] = minOf(d[i][j], d[i - 2][j - 2] + 1)
+                }
             }
-            cur.copyInto(prev)
         }
-        return prev[b.length]
+        return d[a.length][b.length]
+    }
+
+    /** Every spelling one edit away: delete, swap neighbours, replace, insert a letter. */
+    private fun edits(w: String): Set<String> {
+        val out = HashSet<String>()
+        for (i in 0..w.length) {
+            val l = w.substring(0, i)
+            val r = w.substring(i)
+            if (r.isNotEmpty()) out += l + r.substring(1)
+            if (r.length > 1) out += l + r[1] + r[0] + r.substring(2)
+            for (c in ALPHABET) {
+                if (r.isNotEmpty()) out += l + c + r.substring(1)
+                out += l + c + r
+            }
+        }
+        return out
     }
 
     companion object {
+        private const val ALPHABET = "abcdefghijklmnopqrstuvwxyz'"
+
         /** The last run of letters (and inner apostrophes) right before the cursor. */
         private val WORD_AT_END = Regex("""(?<![\p{L}\p{N}@._/-])\p{L}[\p{L}']*$""")
 
