@@ -33,6 +33,22 @@ _SAFE_CAPS = {
     "Mr.", "Mrs.", "Ms.", "Dr.", "God", "English", "Spanish",
 }
 
+# Ordinary words that only got a capital by mistake ("I wanted Want it") shouldn't be hidden
+# from the proofreader. The system word list marks proper nouns with a capital ("Tony", "Grace",
+# "Will" all appear capitalised), so a capitalised word is let through only when its lower-case
+# form is listed and its capitalised form is not. Unknown words stay hidden: privacy first.
+_WORDS_FILE = "/usr/share/dict/american-english"
+try:
+    with open(_WORDS_FILE, encoding="utf-8", errors="ignore") as _f:
+        _DICT = {line.strip() for line in _f if line.strip()}
+except OSError:
+    _DICT = set()
+
+
+def _ordinary_word(w: str) -> bool:
+    return bool(_DICT) and w.lower() in _DICT and w not in _DICT
+
+
 _PLACEHOLDER = re.compile(r"\[([A-Z]+)_(\d+)\]")
 
 
@@ -54,7 +70,7 @@ def deidentify(text: str):
     for sent in doc.sents:
         for tok in list(sent)[1:]:
             w = tok.text
-            if (w[:1].isupper() and w not in _SAFE_CAPS
+            if (w[:1].isupper() and w not in _SAFE_CAPS and not _ordinary_word(w)
                     and not (tok.i > 0 and doc[tok.i - 1].text in {".", "!", "?", "\"", "'", ":"})):
                 spans.append((tok.idx, tok.idx + len(w), "NAME"))
 
