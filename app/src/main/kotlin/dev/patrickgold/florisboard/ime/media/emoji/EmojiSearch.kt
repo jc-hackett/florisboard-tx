@@ -139,8 +139,9 @@ fun EmojiSearchBar(query: String) {
                     fontSize = 24.sp,
                     modifier = Modifier
                         .clickable {
-                            keyboardManager.inputEventDispatcher.sendDownUp(emoji)
+                            // Close the search first, or the emoji would be typed into the query.
                             EmojiSearch.stop()
+                            keyboardManager.inputEventDispatcher.sendDownUp(emoji)
                         }
                         .padding(horizontal = 6.dp),
                 )
