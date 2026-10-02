@@ -397,7 +397,8 @@ async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: 
     raw, text = text, _local_tidy(text)
     if claude and cleanup and CLEANUP_MODE == "claude" and raw:
         try:
-            result, redactions = await run_in_threadpool(_cleanup, raw)
+            # Same proofreading as the sparkle button, so dictation arrives already "sparkled".
+            result, redactions = await run_in_threadpool(_cleanup, raw, TIDY_SYSTEM, "text", 4096)
             if result:
                 text, cleaned, status = result, True, "cleaned"
             else:
