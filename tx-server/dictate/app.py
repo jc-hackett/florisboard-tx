@@ -49,6 +49,8 @@ TOKENS_FILE = os.environ.get("DICTATE_TOKENS", os.path.join(BASE, "tokens"))
 STT_ARCH = os.environ.get("MOONSHINE_ARCH", "MEDIUM_STREAMING")
 STT_CACHE = os.environ.get("MOONSHINE_CACHE", os.path.join(BASE, "models", "moonshine"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5")
+CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "low")
+CLAUDE_THINKING = os.environ.get("CLAUDE_THINKING", "between_tools")
 # "claude": de-identified Claude tidy (~1 s); "local": on-box tidy only (instant).
 CLEANUP_MODE = os.environ.get("CLEANUP_MODE", "claude").strip().lower()
 MAX_BYTES = int(os.environ.get("MAX_AUDIO_BYTES", str(8 * 1024 * 1024)))
@@ -276,12 +278,25 @@ class _LiveStream:
 
 def _cleanup(text: str, system: str = SYSTEM, tag: str = "transcript", max_tokens: int = 2048):
     masked, mapping = deid.deidentify(text)
-    msg = claude.messages.create(
+    request = dict(
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": f"<{tag}>\n{masked}\n</{tag}>"}],
     )
+    if CLAUDE_MODEL.startswith("claude-haiku"):
+        msg = claude.messages.create(**request)
+    else:
+        # Newer models: proofreading needs no deep thinking, so keep it quick and cheap.
+        # CLAUDE_THINKING=between_tools turns thinking off (Sonnet 5.5 only); otherwise adaptive
+        # thinking at low effort, with Anthropic's server-side refusal fallback.
+        extra = {"output_config": {"effort": CLAUDE_EFFORT}}
+        if CLAUDE_THINKING == "between_tools":
+            extra["thinking"] = {"type": "between_tools"}
+            msg = claude.messages.create(**request, **extra)
+        else:
+            msg = claude.beta.messages.create(**request, **extra, betas=["server-side-fallback-2026-07-01"],
+                                              fallbacks="default")
     if msg.stop_reason != "end_turn":
         return None, len(mapping)
     out = "".join(b.text for b in msg.content if b.type == "text").strip()
