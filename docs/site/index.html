@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floris-tx</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --brand:#525F7F; --accent:#0074D4; --ground:#C7D6ED; --card:#fff; --ink:#000; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:400 1.1rem/1.5 "Nunito Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:40rem; margin:4rem auto; padding:2.5rem 2rem; background:var(--card);
+         border:1px solid var(--brand); }
+  h1 { margin:0 0 .25rem; font-size:1.6rem; font-weight:800; color:var(--brand); }
+  .tag { margin:0 0 2rem; color:var(--accent); font-weight:700; }
+  h2 { margin:2rem 0 .4rem; font-size:1.2rem; font-weight:700; }
+  p { margin:0 0 1rem; }
+  a { color:var(--accent); }
+  footer { margin-top:2.5rem; font-size:.9rem; color:var(--brand); }
+  @media (max-width:640px) { main { margin:0; border:0; min-height:100vh; padding:2rem 1rem; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Floris-tx</h1>
+  <p class="tag">A dictation keyboard for clinicians.</p>
+
+  <p>Floris-tx is an Android keyboard built on FlorisBoard. Hold the mic key and talk; the words land in whatever app you are typing in.</p>
+  <p>Your voice goes to our own server, which runs under a signed business associate agreement. It is not sent to a big tech cloud. Before any AI tidies the text, names are swapped out and put back afterwards, so the AI never sees them.</p>
+  <p>It also has a cleanup button that fixes spelling and punctuation in a selection or a whole message, and a word list so it learns the names and terms you use.</p>
+  <p>It is in testing with a few clinicians now. <a href="https://github.com/jc-hackett/florisboard-tx">Source on GitHub</a></p>
+
+  <footer>Made by <a href="https://preview.cutscene.me">Cutscene Labs</a>.</footer>
+</main>
+</body>
+</html>
