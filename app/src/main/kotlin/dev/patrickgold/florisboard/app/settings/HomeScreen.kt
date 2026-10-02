@@ -106,6 +106,13 @@ fun HomeScreen() = FlorisScreen {
                 }
             }
         }*/
+        // florisboard-tx: our own settings first.
+        Preference(
+            icon = Icons.Default.Mic,
+            title = stringRes(R.string.dictation__title),
+            summary = stringRes(R.string.dictation__summary),
+            onClick = { navController.navigate(Routes.Settings.Dictation) },
+        )
         Preference(
             icon = Icons.Default.Language,
             title = stringRes(R.string.settings__localization__title),
@@ -145,12 +152,6 @@ fun HomeScreen() = FlorisScreen {
             icon = Icons.Default.SentimentSatisfiedAlt,
             title = stringRes(R.string.settings__media__title),
             onClick = { navController.navigate(Routes.Settings.Media) },
-        )
-        Preference(
-            icon = Icons.Default.Mic,
-            title = stringRes(R.string.dictation__title),
-            summary = stringRes(R.string.dictation__summary),
-            onClick = { navController.navigate(Routes.Settings.Dictation) },
         )
         Preference(
             icon = Icons.Default.Extension,

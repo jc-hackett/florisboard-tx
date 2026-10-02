@@ -40,7 +40,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.patrickgold.florisboard.R
+import dev.patrickgold.florisboard.app.LocalNavController
+import dev.patrickgold.florisboard.app.Routes
+import dev.patrickgold.florisboard.ime.ai.AiCleanup
 import dev.patrickgold.florisboard.ime.ai.AppUpdater
+import dev.patrickgold.florisboard.ime.ai.ButtonColors
 import dev.patrickgold.florisboard.ime.ai.AutoCorrector
 import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import kotlinx.coroutines.launch
@@ -59,6 +63,10 @@ fun DictationScreen() = FlorisScreen {
     var words by remember { mutableStateOf(settings.words) }
     var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var autoCleanup by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
+    var enterColor by remember { mutableStateOf(settings.enterColor) }
+    var micColor by remember { mutableStateOf(settings.micColor) }
+    var sparkleColor by remember { mutableStateOf(settings.sparkleColor) }
+    val navController = LocalNavController.current
     var saved by remember { mutableStateOf(false) }
     val autoCorrector = remember { AutoCorrector(context) }
     var spellStatus by remember {
@@ -150,8 +158,28 @@ fun DictationScreen() = FlorisScreen {
             title = stringRes(R.string.dictation__auto_cleanup__title),
             summary = stringRes(
                 if (autoCleanup) R.string.dictation__auto_cleanup__on else R.string.dictation__auto_cleanup__off
-            ),
+            ) + "\nLast sentence: " + AiCleanup.lastAutoEvent,
             onClick = { autoCleanup = !autoCleanup; settings.autoCleanupOnPeriod = autoCleanup },
+        )
+        Preference(
+            title = "Recent edits",
+            summary = "Before and after for each dictation and cleanup, with notes, to tune the cleanup.",
+            onClick = { navController.navigate(Routes.Settings.Edits) },
+        )
+        Preference(
+            title = "Enter key colour",
+            summary = ButtonColors.label(enterColor) + ". Tap to change.",
+            onClick = { enterColor = ButtonColors.next(enterColor); settings.enterColor = enterColor },
+        )
+        Preference(
+            title = "Mic button colour",
+            summary = ButtonColors.label(micColor) + ". Tap to change.",
+            onClick = { micColor = ButtonColors.next(micColor); settings.micColor = micColor },
+        )
+        Preference(
+            title = "Sparkle button colour",
+            summary = ButtonColors.label(sparkleColor) + ". Tap to change.",
+            onClick = { sparkleColor = ButtonColors.next(sparkleColor); settings.sparkleColor = sparkleColor },
         )
         Preference(
             title = stringRes(R.string.dictation__autocorrect__title),

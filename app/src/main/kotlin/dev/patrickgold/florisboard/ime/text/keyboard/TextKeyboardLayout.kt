@@ -54,8 +54,13 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.patrickgold.florisboard.ime.ai.ButtonColors
+import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import dev.patrickgold.florisboard.FlorisImeService
 import dev.patrickgold.florisboard.app.FlorisPreferenceStore
@@ -340,6 +345,20 @@ private fun TextKeyButton(
             .requiredSize(size)
             .absoluteOffset { key.visibleBounds.topLeft.toIntOffset() },
     ) {
+        // florisboard-tx: the Enter key in the user's chosen colour (Settings > Customization).
+        if (key.computedData.code == KeyCode.ENTER) {
+            val enterColor = ButtonColors.color(DictationSettings(LocalContext.current).enterColor)
+            if (enterColor != null) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            if (key.isPressed) enterColor.copy(alpha = 0.75f) else enterColor,
+                            RoundedCornerShape(8.dp),
+                        ),
+                )
+            }
+        }
         val isTelPadKey = key.computedData.type == KeyType.NUMERIC && evaluator.keyboard.mode == KeyboardMode.PHONE
         key.label?.let { label ->
             var customLabel = label

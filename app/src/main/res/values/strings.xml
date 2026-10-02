@@ -100,8 +100,8 @@
     <string name="quick_action__ai_cleanup" comment="Please mind the limited available space for the quick action strings">AI cleanup</string>
     <string name="quick_action__ai_cleanup__tooltip">Proofread the selection, or the whole box, with AI (names hidden first)</string>
     <!-- florisboard-tx dictation -->
-    <string name="dictation__title">Dictation</string>
-    <string name="dictation__summary">Your own speech-to-text server, address and access token</string>
+    <string name="dictation__title">Customization</string>
+    <string name="dictation__summary">Dictation, AI cleanup, autocorrect, word list, colours and updates</string>
     <string name="dictation__intro">The dictate key records only while it is on, streaming your voice to the server below over HTTPS as you speak. Nothing is sent in incognito mode. Audio is never saved on the server. Tap the key while it waits to cancel.</string>
     <string name="dictation__server_url">Server address</string>
     <string name="dictation__server_url_hint">https://dictate.example.com</string>
@@ -111,9 +111,9 @@
     <string name="dictation__microphone__title">Microphone permission</string>
     <string name="dictation__microphone__granted">Granted</string>
     <string name="dictation__microphone__not_granted">Not granted. Tap to allow.</string>
-    <string name="dictation__error_not_set_up">Dictation: add the server address and token in Settings, Dictation</string>
+    <string name="dictation__error_not_set_up">Dictation: add the server address and token in Settings, Customization</string>
     <string name="dictation__error_not_https">Dictation: the server address must start with https://</string>
-    <string name="dictation__error_no_microphone">Dictation: allow the microphone in Settings, Dictation</string>
+    <string name="dictation__error_no_microphone">Dictation: allow the microphone in Settings, Customization</string>
     <string name="dictation__error_microphone_busy">Dictation: the microphone is in use by another app</string>
     <string name="dictation__error_bad_token">Dictation: the server did not accept the access token</string>
     <string name="dictation__error_server">Dictation: the server had a problem, try again</string>

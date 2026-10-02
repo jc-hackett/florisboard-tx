@@ -59,7 +59,7 @@ class AiCleanup private constructor(context: Context) {
         if (editorInfo.inputAttributes.variation in PASSWORDS) return toast("AI cleanup doesn't touch password fields")
         val settings = DictationSettings(appContext)
         if (settings.serverUrl.isBlank() || settings.token.isBlank()) {
-            return toast("AI cleanup: add the server address and token in Settings, Dictation")
+            return toast("AI cleanup: add the server address and token in Settings, Customization")
         }
         val ic = FlorisImeService.currentInputConnection() ?: return
         if (undoIfJustCleaned(ic)) return
@@ -75,7 +75,9 @@ class AiCleanup private constructor(context: Context) {
             original = before + after
         }
         if (original.isBlank()) return toast("AI cleanup: nothing to clean up")
-        if (original.length >= MAX_CHARS) return toast("AI cleanup: that's too long; select a part of it")
+        if (original.length > SEND_MAX) {
+            return toast("AI cleanup: that's too long (about 300 words at most). Select a part and tap again.")
+        }
 
         _busy.value = true
         scope.launch {
@@ -99,9 +101,10 @@ class AiCleanup private constructor(context: Context) {
                 ic2.commitText(cleaned, 1)
                 ic2.endBatchEdit()
                 lastDone = Done(cleaned, original, System.currentTimeMillis())
+                EditLog.add(appContext, "Sparkle", original, cleaned)
                 toast("Cleaned up. Tap again to undo.")
             } catch (e: Exception) {
-                toast("AI cleanup failed: ${e.message ?: "no connection"}")
+                toast("AI cleanup: ${e.message ?: "couldn't reach the server."}")
             } finally {
                 _busy.value = false
             }
@@ -116,15 +119,16 @@ class AiCleanup private constructor(context: Context) {
      */
     fun cleanSentenceJustEnded(editorInfo: FlorisEditorInfo) {
         val settings = DictationSettings(appContext)
-        if (!settings.autoCleanupOnPeriod) return
-        if (editorInfo.inputAttributes.variation in PASSWORDS) return
-        if (settings.serverUrl.isBlank() || settings.token.isBlank()) return
-        val ic = FlorisImeService.currentInputConnection() ?: return
-        val et = ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) ?: return
-        if (et.startOffset != 0 || et.text == null) return
-        val full = et.text.toString()
-        val cursor = et.selectionStart
-        if (cursor < 3 || cursor > full.length || !full.substring(0, cursor).endsWith(". ")) return
+        if (!settings.autoCleanupOnPeriod) return note("off")
+        if (editorInfo.inputAttributes.variation in PASSWORDS) return note("skipped: password field")
+        if (settings.serverUrl.isBlank() || settings.token.isBlank()) return note("skipped: server not set up")
+        val ic = FlorisImeService.currentInputConnection() ?: return note("skipped: no text box")
+        val snap = snapshot(ic) ?: return note("skipped: this app won't let the keyboard read the box")
+        val full = snap.text
+        val cursor = snap.selStart
+        if (cursor < 3 || cursor > full.length || !full.substring(0, cursor).endsWith(". ")) {
+            return note("skipped: couldn't find the period it just typed")
+        }
         // The sentence: from the previous sentence end (or line start) up to and including the ".".
         val end = cursor - 1
         val head = full.substring(0, end - 1)
@@ -132,29 +136,55 @@ class AiCleanup private constructor(context: Context) {
         var start = prevEnd + 1
         while (start < end && full[start].isWhitespace()) start++
         val sentence = full.substring(start, end)
-        if (sentence.length < 3 || sentence.length > MAX_CHARS) return
+        if (sentence.length < 3) return note("skipped: sentence too short")
+        if (sentence.length > SEND_MAX) return note("skipped: sentence too long")
+        note("sent: \"${sentence.take(40)}\" (${snap.how})")
 
         scope.launch {
             val cleaned = try {
                 withContext(Dispatchers.IO) { request(settings.serverUrl, settings.token, sentence) }?.trim()
             } catch (e: Exception) {
-                null
-            } ?: return@launch
-            if (cleaned == sentence || cleaned.isEmpty()) return@launch
-            val ic2 = FlorisImeService.currentInputConnection() ?: return@launch
-            val now = ic2.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) ?: return@launch
-            if (now.startOffset != 0 || now.text == null) return@launch
-            val text = now.text.toString()
-            if (text.length < end || text.substring(start, end) != sentence) return@launch // user changed it
+                return@launch note("not changed: ${e.message ?: "couldn't reach the server"}")
+            } ?: return@launch note("not changed: empty answer")
+            if (cleaned == sentence || cleaned.isEmpty()) return@launch note("checked: nothing to change")
+            val ic2 = FlorisImeService.currentInputConnection() ?: return@launch note("not changed: text box closed")
+            val now = snapshot(ic2) ?: return@launch note("not changed: couldn't read the box again")
+            val text = now.text
+            if (text.length < end || text.substring(start, end) != sentence) {
+                return@launch note("not changed: you edited that sentence meanwhile")
+            }
             val delta = cleaned.length - sentence.length
-            val newSelStart = if (now.selectionStart >= end) now.selectionStart + delta else now.selectionStart
-            val newSelEnd = if (now.selectionEnd >= end) now.selectionEnd + delta else now.selectionEnd
+            val newSelStart = if (now.selStart >= end) now.selStart + delta else now.selStart
+            val newSelEnd = if (now.selEnd >= end) now.selEnd + delta else now.selEnd
             ic2.beginBatchEdit()
             ic2.setSelection(start, end)
             ic2.commitText(cleaned, 1)
             ic2.setSelection(newSelStart, newSelEnd)
             ic2.endBatchEdit()
+            note("replaced: \"${cleaned.take(40)}\"")
+            EditLog.add(appContext, "Auto (sentence)", sentence, cleaned)
         }
+    }
+
+    /** The whole box and the cursor, read whichever way the app allows. */
+    private data class Snapshot(val text: String, val selStart: Int, val selEnd: Int, val how: String)
+
+    private fun snapshot(ic: android.view.inputmethod.InputConnection): Snapshot? {
+        // 1. The standard way: the app hands over its whole text and cursor.
+        val et = runCatching { ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) }.getOrNull()
+        if (et?.text != null && et.startOffset == 0 && et.selectionStart >= 0) {
+            return Snapshot(et.text.toString(), et.selectionStart, et.selectionEnd, "read directly")
+        }
+        // 2. Some apps (WhatsApp among them) don't; rebuild it from the text around the cursor.
+        val before = ic.getTextBeforeCursor(MAX_CHARS, 0)?.toString() ?: return null
+        if (before.length >= MAX_CHARS) return null // box longer than we can see: positions unknown
+        val selected = ic.getSelectedText(0)?.toString().orEmpty()
+        val after = ic.getTextAfterCursor(MAX_CHARS, 0)?.toString().orEmpty()
+        return Snapshot(before + selected + after, before.length, before.length + selected.length, "rebuilt")
+    }
+
+    private fun note(text: String) {
+        lastAutoEvent = text
     }
 
     private fun request(server: String, token: String, text: String): String? {
@@ -170,9 +200,14 @@ class AiCleanup private constructor(context: Context) {
             conn.outputStream.use { it.write(JSONObject().put("text", text).toString().toByteArray()) }
             when (val code = conn.responseCode) {
                 in 200..299 -> {}
-                401 -> error("the server didn't accept the token")
-                503 -> error("not set up on the server")
-                else -> error("server answered $code")
+                401 -> error("the server didn't accept your access token.")
+                413 -> error("that's too long (about 300 words at most). Select a part and tap again.")
+                429 -> error(
+                    if (serverReason(conn).contains("daily")) "you've reached today's limit. It resets tomorrow."
+                    else "too many in a row. Wait a minute and try again."
+                )
+                503 -> error("it isn't switched on on the server.")
+                else -> error("the server had a problem ($code). Try again.")
             }
             val o = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             return o.optString("text").takeIf { it.isNotBlank() }
@@ -180,6 +215,11 @@ class AiCleanup private constructor(context: Context) {
             conn.disconnect()
         }
     }
+
+    /** The server's own reason for refusing, if it sent one. */
+    private fun serverReason(conn: HttpURLConnection): String = runCatching {
+        JSONObject(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "{}").optString("detail")
+    }.getOrDefault("")
 
     /** If the text just before the cursor is exactly what the last cleanup wrote, restore it. */
     private fun undoIfJustCleaned(ic: android.view.inputmethod.InputConnection): Boolean {
@@ -202,12 +242,18 @@ class AiCleanup private constructor(context: Context) {
 
     companion object {
         private const val MAX_CHARS = 6000
+        /** Must match the server's TIDY_MAX_CHARS. */
+        private const val SEND_MAX = 2000
         private const val UNDO_WINDOW_MS = 60_000L
         private val PASSWORDS = setOf(
             InputAttributes.Variation.PASSWORD,
             InputAttributes.Variation.VISIBLE_PASSWORD,
             InputAttributes.Variation.WEB_PASSWORD,
         )
+
+        /** What the per-sentence cleanup last did, in plain words; shown in Settings > Customization. */
+        @Volatile var lastAutoEvent: String = "nothing yet since the keyboard started"
+            private set
 
         @Volatile private var instance: AiCleanup? = null
 

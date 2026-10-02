@@ -55,6 +55,22 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_CLEANUP, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CLEANUP, value).apply()
 
+    /** Keep the opt-in "Recent edits" log on this phone (see EditLog). Off unless switched on. */
+    var editLog: Boolean
+        get() = prefs.getBoolean(KEY_EDIT_LOG, false)
+        set(value) = prefs.edit().putBoolean(KEY_EDIT_LOG, value).apply()
+
+    /** Button colours by name (see ButtonColors); "theme" keeps the theme's own colour. */
+    var enterColor: String
+        get() = prefs.getString(KEY_ENTER_COLOR, "theme") ?: "theme"
+        set(value) = prefs.edit().putString(KEY_ENTER_COLOR, value).apply()
+    var micColor: String
+        get() = prefs.getString(KEY_MIC_COLOR, "theme") ?: "theme"
+        set(value) = prefs.edit().putString(KEY_MIC_COLOR, value).apply()
+    var sparkleColor: String
+        get() = prefs.getString(KEY_SPARKLE_COLOR, "theme") ?: "theme"
+        set(value) = prefs.edit().putString(KEY_SPARKLE_COLOR, value).apply()
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -65,6 +81,10 @@ class DictationSettings(context: Context) {
         private const val KEY_WORDS = "words"
         private const val KEY_AUTOCORRECT = "autocorrect"
         private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
+        private const val KEY_EDIT_LOG = "edit_log"
+        private const val KEY_ENTER_COLOR = "enter_color"
+        private const val KEY_MIC_COLOR = "mic_color"
+        private const val KEY_SPARKLE_COLOR = "sparkle_color"
         const val MAX_WORDS = 200
     }
 }

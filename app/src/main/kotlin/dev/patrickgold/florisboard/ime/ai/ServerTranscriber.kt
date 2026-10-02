@@ -158,6 +158,7 @@ class ServerTranscriber(context: Context) : Transcriber {
             if (code !in 200..299) throw DictationException(R.string.dictation__error_server)
             val json = conn.inputStream.bufferedReader().use { it.readText() }
             val text = JSONObject(json).optString("text").trim()
+            lastRaw = JSONObject(json).optString("raw").trim().ifEmpty { null }
             return if (text.isEmpty()) null else "$text "
         } catch (e: DictationException) {
             throw e
@@ -176,6 +177,9 @@ class ServerTranscriber(context: Context) : Transcriber {
     }
 
     companion object {
+        /** What the speech model heard before cleanup, for the opt-in edit log. */
+        @Volatile var lastRaw: String? = null
+
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SAMPLE = 2
         /** Clips shorter than this (in tenths of a second) are treated as accidental presses. */

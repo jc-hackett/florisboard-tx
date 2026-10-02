@@ -143,6 +143,12 @@ fun Smartbar() {
 
 @Composable
 private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+    // florisboard-tx: while emoji search is open, the strip shows the query and matching emoji.
+    val emojiQuery by dev.patrickgold.florisboard.ime.media.emoji.EmojiSearch.query.collectAsState()
+    emojiQuery?.let { q ->
+        dev.patrickgold.florisboard.ime.media.emoji.EmojiSearchBar(q)
+        return
+    }
     val prefs by FlorisPreferenceStore
     val context = LocalContext.current
     val keyboardManager by context.keyboardManager()

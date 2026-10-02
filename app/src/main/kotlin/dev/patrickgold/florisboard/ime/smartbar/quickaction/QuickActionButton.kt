@@ -41,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Icon
+import dev.patrickgold.florisboard.ime.ai.ButtonColors
+import dev.patrickgold.florisboard.ime.ai.DictationSettings
 import dev.patrickgold.compose.tooltip.PlainTooltip
 import dev.patrickgold.florisboard.dictationManager
 import dev.patrickgold.florisboard.ime.ai.DictationState
@@ -141,14 +144,19 @@ fun QuickActionButton(
                             attributes = attributes,
                             selector = selector,
                         ) {
-                            SnyggIcon(
-                                imageVector = when (dictationState) {
-                                    DictationState.RECORDING -> Icons.Default.StopCircle
-                                    DictationState.WORKING -> Icons.Default.HourglassTop
-                                    DictationState.ERROR -> Icons.Default.MicOff
-                                    DictationState.IDLE -> Icons.Default.Mic
-                                },
-                            )
+                            val micIcon = when (dictationState) {
+                                DictationState.RECORDING -> Icons.Default.StopCircle
+                                DictationState.WORKING -> Icons.Default.HourglassTop
+                                DictationState.ERROR -> Icons.Default.MicOff
+                                DictationState.IDLE -> Icons.Default.Mic
+                            }
+                            // florisboard-tx: the user's chosen colour, if any (Settings > Customization).
+                            val micColor = ButtonColors.color(DictationSettings(context).micColor)
+                            if (micColor != null) {
+                                Icon(imageVector = micIcon, contentDescription = null, tint = micColor)
+                            } else {
+                                SnyggIcon(imageVector = micIcon)
+                            }
                         }
                     }
 
@@ -159,9 +167,13 @@ fun QuickActionButton(
                             attributes = attributes,
                             selector = selector,
                         ) {
-                            SnyggIcon(
-                                imageVector = if (busy) Icons.Default.HourglassTop else Icons.Default.AutoFixHigh,
-                            )
+                            val sparkleIcon = if (busy) Icons.Default.HourglassTop else Icons.Default.AutoFixHigh
+                            val sparkleColor = ButtonColors.color(DictationSettings(context).sparkleColor)
+                            if (sparkleColor != null) {
+                                Icon(imageVector = sparkleIcon, contentDescription = null, tint = sparkleColor)
+                            } else {
+                                SnyggIcon(imageVector = sparkleIcon)
+                            }
                         }
                     }
 

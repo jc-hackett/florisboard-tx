@@ -22,7 +22,9 @@ import android.util.TypedValue
 import android.widget.TextView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.aspectRatio
@@ -42,6 +44,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
@@ -89,6 +93,7 @@ import dev.patrickgold.florisboard.ime.keyboard.FlorisImeSizing
 import dev.patrickgold.florisboard.ime.text.keyboard.TextKeyData
 import dev.patrickgold.florisboard.ime.theme.FlorisImeUi
 import dev.patrickgold.florisboard.keyboardManager
+import dev.patrickgold.florisboard.ime.ImeUiMode
 import dev.patrickgold.jetpref.datastore.model.collectAsState
 import kotlinx.coroutines.launch
 import org.florisboard.lib.android.AndroidKeyguardManager
@@ -288,13 +293,29 @@ fun EmojiPaletteView(
             pagerState.animateScrollToPage(0)
         }
 
-        EmojiCategoriesTabRow(
-            activeCategory = activeCategory,
-            onCategoryChange = { category ->
-                activeCategory = category
-                scope.launch { pagerState.animateScrollToPage(categoryToPageNumber(activeCategory)) }
-            },
-        )
+        // florisboard-tx: a magnifier before the category tabs opens emoji search (EmojiSearch.kt).
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Search emoji",
+                tint = rememberSnyggThemeQuery(FlorisImeUi.MediaEmojiTab.elementName).foreground(),
+                modifier = Modifier
+                    .clickable {
+                        EmojiSearch.start()
+                        keyboardManager.activeState.imeUiMode = ImeUiMode.TEXT
+                    }
+                    .padding(horizontal = 10.dp),
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                EmojiCategoriesTabRow(
+                    activeCategory = activeCategory,
+                    onCategoryChange = { category ->
+                        activeCategory = category
+                        scope.launch { pagerState.animateScrollToPage(categoryToPageNumber(activeCategory)) }
+                    },
+                )
+            }
+        }
         HorizontalPager(pagerState, beyondViewportPageCount = 1) { page ->
             // Every page needs its own lazyGridState in order to scroll correctly
             val lazyGridState = rememberLazyGridState()

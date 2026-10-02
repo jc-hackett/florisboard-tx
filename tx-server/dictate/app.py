@@ -415,7 +415,7 @@ async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: 
              user, status, seconds, len(text), words, redactions, ms["stt_tail"], ms["cleanup"],
              ms["after_release"])
     _record_count(user, words, seconds, status)
-    return {"text": text, "cleaned": cleaned, "ms": ms}
+    return {"text": text, "raw": raw, "cleaned": cleaned, "ms": ms}  # raw: for the phone's opt-in edit log
 
 
 @app.get("/healthz")
