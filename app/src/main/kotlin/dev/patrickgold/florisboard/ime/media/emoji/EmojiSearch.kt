@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.patrickgold.florisboard.ime.theme.FlorisImeUi
-import dev.patrickgold.florisboard.keyboardManager
+import dev.patrickgold.florisboard.editorInstance
 import dev.patrickgold.florisboard.ime.keyboard.FlorisImeSizing
 import dev.patrickgold.florisboard.subtypeManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -101,7 +101,7 @@ object EmojiSearch {
 @Composable
 fun EmojiSearchBar(query: String) {
     val context = LocalContext.current
-    val keyboardManager by context.keyboardManager()
+    val editorInstance by context.editorInstance()
     val subtypeManager by context.subtypeManager()
     val color = rememberSnyggThemeQuery(FlorisImeUi.SmartbarCandidateWord.elementName).foreground()
     var results by remember { mutableStateOf(emptyList<Emoji>()) }
@@ -139,9 +139,11 @@ fun EmojiSearchBar(query: String) {
                     fontSize = 24.sp,
                     modifier = Modifier
                         .clickable {
-                            // Close the search first, or the emoji would be typed into the query.
+                            // Close the search first, then put the emoji straight into the app's
+                            // box: in letter mode the normal key path treats it as a letter and
+                            // drops it.
                             EmojiSearch.stop()
-                            keyboardManager.inputEventDispatcher.sendDownUp(emoji)
+                            editorInstance.commitText(emoji.value)
                         }
                         .padding(horizontal = 6.dp),
                 )
