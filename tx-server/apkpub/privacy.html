@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SovereignBoard: privacy</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1b1b1f; --muted: #5f5f66; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121214; --fg: #ececf1; --muted: #a1a1aa; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 36rem; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 22px 0 4px; }
+  p, li { color: var(--fg); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SovereignBoard: what happens to your words</h1>
+  <p class="muted">Plain-language summary, October 2026. Questions: ask Jeremiah Hackett, who runs the server.</p>
+
+  <h2>Typing</h2>
+  <p>Everything you type stays on your phone. Autocorrect, suggestions and smarter tapping all work on the phone itself.</p>
+
+  <h2>Dictation</h2>
+  <ul>
+    <li>Only while the mic is on, your voice streams over an encrypted connection to a private server Jeremiah runs (hosted by Vultr, under a signed health-privacy agreement).</li>
+    <li>It is turned into text there and the audio is discarded straight away. Audio is never saved.</li>
+    <li>The server keeps only counts: when, how many words, how many seconds. Never what you said.</li>
+  </ul>
+
+  <h2>AI cleanup (the sparkle, and the tidy-up after dictation or a sentence)</h2>
+  <ul>
+    <li>Names, places, dates and numbers are swapped for placeholders on the server <em>before</em> the text goes to Anthropic's Claude for proofreading, and put back afterwards.</li>
+    <li>Anthropic processes it under a signed health-privacy agreement (BAA) with Jeremiah's company.</li>
+    <li>The server keeps no copy of the text.</li>
+  </ul>
+
+  <h2>On your phone</h2>
+  <ul>
+    <li>"Recent edits" (off unless you switch it on) and anything you mark 👎 are kept on your phone only, and wiped after seven days.</li>
+    <li>Nothing is sent while the keyboard is in incognito mode, and password fields are never touched.</li>
+  </ul>
+
+  <h2>If you use it with your own clients</h2>
+  <p>Jeremiah's agreements cover his own practice. If you dictate client information, talk to him first about the agreement you'd need.</p>
+</main>
+</body>
+</html>
