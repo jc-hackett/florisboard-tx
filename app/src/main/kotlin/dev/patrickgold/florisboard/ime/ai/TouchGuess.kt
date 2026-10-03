@@ -92,7 +92,7 @@ object TouchGuess {
         if (!isReady || candidates.size < 2) return null
         val total = weight(wordSoFar).takeIf { it > 0 } ?: return null
         return candidates.maxByOrNull { (letter, d) ->
-            val spatial = exp(-(d * d) / (2 * SIGMA * SIGMA))
+            val spatial = exp(-(d * d) / (2 * SIGMA * SIGMA)).toDouble()
             val prior = weight(wordSoFar + letter) / total
             spatial * (prior + FLOOR)
         }?.first
