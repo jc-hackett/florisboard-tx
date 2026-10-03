@@ -137,6 +137,28 @@ fun DictationScreen() = FlorisScreen {
     ) { granted -> micGranted = granted }
 
     content {
+        // florisboard-tx: a first-run checklist. Each line ticks when done; a tap opens the next
+        // missing step.
+        val keyboardOn = context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            ?.enabledInputMethodList?.any { it.packageName == context.packageName } == true
+        val connected = token.isNotBlank()
+        val tick = { done: Boolean -> if (done) "✓" else "○" }
+        Preference(
+            title = if (keyboardOn && micGranted && connected) "All set" else "Getting started",
+            summary = "${tick(keyboardOn)} Keyboard turned on\n" +
+                "${tick(micGranted)} Microphone allowed\n" +
+                "${tick(connected)} Connected" + (if (connected) "" else " (open your setup link, or paste your access token below)") +
+                (if (!keyboardOn || !micGranted) "\nTap to do the next step." else ""),
+            onClick = {
+                when {
+                    !keyboardOn -> context.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    !micGranted -> micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+        )
         Text(
             text = stringRes(R.string.dictation__intro),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Set up your dictation keyboard</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1b1b1f; --muted: #5f5f66; --card: #fff; --line: #e3e3e8; --accent: #c2410c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121214; --fg: #ececf1; --muted: #a1a1aa; --card: #1c1c20; --line: #2c2c33; --accent: #fb923c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  ol { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  li { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; counter-increment: step; }
+  li h2 { font-size: 1.05rem; margin: 0 0 6px; }
+  li h2::before { content: counter(step) ". "; color: var(--accent); }
+  li p { margin: 0 0 10px; color: var(--muted); }
+  a.button { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; padding: 14px; border-radius: 12px; }
+  .warn { color: var(--accent); font-weight: 600; }
+  footer { color: var(--muted); font-size: 0.9rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="hello">Set up your dictation keyboard</h1>
+  <p class="lede">About five minutes, on your Android phone. Do the steps in order.</p>
+  <ol>
+    <li>
+      <h2>Install the keyboard</h2>
+      <p>Tap below, open the downloaded file, and allow installs from your browser when Android asks. Then tap Install.</p>
+      <a class="button" href="florisboard-tx.apk">Download the keyboard</a>
+    </li>
+    <li>
+      <h2>Turn it on</h2>
+      <p>Open the new app (FlorisBoard). It walks you through turning the keyboard on. Then, while typing anywhere, tap the small keyboard icon at the bottom of the screen and choose it.</p>
+    </li>
+    <li>
+      <h2>Connect it</h2>
+      <p>Come back to this page and tap the button. It fills in your personal access, so there's nothing to type.</p>
+      <a class="button" id="connect" href="#">Connect my keyboard</a>
+      <p id="missing" class="warn" hidden>This link is missing its personal part. Ask Jeremiah for your setup link again.</p>
+    </li>
+    <li>
+      <h2>Allow the microphone</h2>
+      <p>The keyboard's settings open on "Customization". Tap "Getting started" until all three lines have a tick.</p>
+    </li>
+  </ol>
+  <footer>This link is yours alone. Please don't forward it: it lets anyone use the keyboard as you. Your voice is turned into text on Jeremiah's own server and never saved.</footer>
+</main>
+<script>
+  (function () {
+    var p = new URLSearchParams(location.hash.slice(1));
+    var token = p.get("t") || "";
+    var name = p.get("n") || "";
+    if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up your dictation keyboard";
+    var connect = document.getElementById("connect");
+    if (token.indexOf("dt_") === 0) {
+      connect.href = "floristx://setup?server=" + encodeURIComponent(location.origin) + "&token=" + encodeURIComponent(token);
+    } else {
+      connect.hidden = true;
+      document.getElementById("missing").hidden = false;
+    }
+  })();
+</script>
+</body>
+</html>

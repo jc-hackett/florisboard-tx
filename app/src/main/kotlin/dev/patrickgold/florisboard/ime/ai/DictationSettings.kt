@@ -29,7 +29,7 @@ class DictationSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER, "") ?: ""
+        get() = prefs.getString(KEY_SERVER, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_SERVER
         set(value) = prefs.edit().putString(KEY_SERVER, value.trim()).apply()
 
     var token: String
@@ -81,6 +81,8 @@ class DictationSettings(context: Context) {
 
     companion object {
         private const val FILE = "dictation"
+        /** Filled in for new installs so only the access token (or a setup link) is needed. */
+        const val DEFAULT_SERVER = "https://dictate.limn.dev"
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
         private const val KEY_WORDS = "words"

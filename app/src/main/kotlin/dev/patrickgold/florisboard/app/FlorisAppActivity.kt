@@ -154,6 +154,25 @@ class FlorisAppActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
+        // florisboard-tx: a personal setup link fills in the server and access token, then opens
+        // Customization so the person can see they're connected.
+        val data = intent.data
+        if (intent.action == Intent.ACTION_VIEW && data?.scheme == "floristx" && data.host == "setup") {
+            val server = data.getQueryParameter("server")?.trim().orEmpty()
+            val token = data.getQueryParameter("token")?.trim().orEmpty()
+            if (server.startsWith("https://") && token.startsWith("dt_")) {
+                val settings = dev.patrickgold.florisboard.ime.ai.DictationSettings(this)
+                settings.serverUrl = server
+                settings.token = token
+                android.widget.Toast.makeText(this, "Keyboard connected", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                android.widget.Toast.makeText(this, "That setup link looks incomplete", android.widget.Toast.LENGTH_LONG).show()
+            }
+            intentToBeHandled = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("ui://florisboard/settings/dictation"))
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+            return
+        }
+
         if (intent.action == Intent.ACTION_VIEW && intent.categories?.contains(Intent.CATEGORY_BROWSABLE) == true) {
             intentToBeHandled = intent
             return
