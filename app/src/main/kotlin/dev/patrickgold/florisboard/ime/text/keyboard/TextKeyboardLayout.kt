@@ -58,6 +58,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.patrickgold.florisboard.ime.ai.ButtonColors
 import dev.patrickgold.florisboard.ime.ai.DictationSettings
+import dev.patrickgold.florisboard.ime.ai.TouchGuess
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -408,12 +409,54 @@ private fun TextKeyButton(
 }
 
 @Suppress("unused_parameter")
+/** Smarter tapping: taps within this distance of a key's centre (in key sizes) always stay. */
+private const val INNER_ZONE = 0.3f
+/** Letter keys whose centre is within this distance are considered as alternatives. */
+private const val NEIGHBOUR_ZONE = 0.9f
+
 private class TextKeyboardLayoutController(
     context: Context,
 ) : SwipeGesture.Listener, GlideTypingGesture.Listener {
     private val prefs by FlorisPreferenceStore
     private val editorInstance by context.editorInstance()
     private val keyboardManager by context.keyboardManager()
+    private val txSettings = DictationSettings(context)
+
+    init {
+        TouchGuess.ensureLoaded(context)
+    }
+
+    /**
+     * florisboard-tx "smarter tapping": the plain hit test, except that a tap in the outer edge of
+     * a letter key may go to a neighbouring letter that better continues the current word
+     * (see TouchGuess). Taps well inside a key are never moved.
+     */
+    private fun keyForTouch(x: Float, y: Float): TextKey? {
+        val direct = keyboard.getKeyForPos(x, y) ?: return null
+        if (!txSettings.touchGuess || !TouchGuess.isReady) return direct
+        fun letterOf(k: TextKey): Char? = k.computedData.takeIf { it.type == KeyType.CHARACTER }
+            ?.asString(isForDisplay = false)?.singleOrNull()?.lowercaseChar()?.takeIf { it in 'a'..'z' }
+        fun dist(k: TextKey): Float {
+            val b = k.visibleBounds
+            if (b.width <= 0f || b.height <= 0f) return Float.MAX_VALUE
+            val dx = (x - b.center.x) / b.width
+            val dy = (y - b.center.y) / b.height
+            return kotlin.math.sqrt(dx * dx + dy * dy)
+        }
+        val directLetter = letterOf(direct) ?: return direct
+        if (dist(direct) <= INNER_ZONE) return direct
+        val candidates = keyboard.keys().mapNotNull { k ->
+            val l = letterOf(k) ?: return@mapNotNull null
+            val d = dist(k)
+            if (d <= NEIGHBOUR_ZONE) Triple(k, l, d) else null
+        }.toList()
+        if (candidates.size < 2) return direct
+        val before = editorInstance.run { activeContent.getTextBeforeCursor(24) }
+        val wordSoFar = before.takeLastWhile { it.isLetter() || it == '\'' }.lowercase()
+        val chosen = TouchGuess.choose(candidates.map { it.second to it.third }, wordSoFar) ?: return direct
+        if (chosen == directLetter) return direct
+        return candidates.firstOrNull { it.second == chosen }?.first ?: direct
+    }
 
     private val inputEventDispatcher get() = keyboardManager.inputEventDispatcher
     private val inputFeedbackController get() = FlorisImeService.inputFeedbackController()
@@ -574,7 +617,7 @@ private class TextKeyboardLayoutController(
     private fun onTouchDownInternal(event: MotionEvent, pointer: TouchPointer) {
         flogDebug(LogTopic.TEXT_KEYBOARD_VIEW) { "pointer=$pointer" }
 
-        val key = keyboard.getKeyForPos(event.getX(pointer.index), event.getY(pointer.index))
+        val key = keyForTouch(event.getX(pointer.index), event.getY(pointer.index))
         if (key != null && key.isEnabled) {
             key.computedDataOnDown = key.computedData
             pointer.pressedKeyInfo = inputEventDispatcher.sendDown(

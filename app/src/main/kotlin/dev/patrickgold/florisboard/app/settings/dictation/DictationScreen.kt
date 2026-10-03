@@ -63,6 +63,7 @@ fun DictationScreen() = FlorisScreen {
     var words by remember { mutableStateOf(settings.words) }
     var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var autoCleanup by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
+    var touchGuess by remember { mutableStateOf(settings.touchGuess) }
     var enterColor by remember { mutableStateOf(settings.enterColor) }
     var micColor by remember { mutableStateOf(settings.micColor) }
     var sparkleColor by remember { mutableStateOf(settings.sparkleColor) }
@@ -160,6 +161,15 @@ fun DictationScreen() = FlorisScreen {
                 if (autoCleanup) R.string.dictation__auto_cleanup__on else R.string.dictation__auto_cleanup__off
             ) + "\nLast sentence: " + AiCleanup.lastAutoEvent,
             onClick = { autoCleanup = !autoCleanup; settings.autoCleanupOnPeriod = autoCleanup },
+        )
+        Preference(
+            title = "Smarter tapping",
+            summary = if (touchGuess) {
+                "On. A tap near the edge of a key goes to the letter that best fits the word you're typing. Tap to turn off."
+            } else {
+                "Off. Every tap counts exactly where it lands. Tap to turn on."
+            },
+            onClick = { touchGuess = !touchGuess; settings.touchGuess = touchGuess },
         )
         Preference(
             title = "Recent edits",

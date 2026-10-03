@@ -71,6 +71,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getString(KEY_SPARKLE_COLOR, "theme") ?: "theme"
         set(value) = prefs.edit().putString(KEY_SPARKLE_COLOR, value).apply()
 
+    /** Smarter tapping near key borders (TouchGuess). On unless switched off. */
+    var touchGuess: Boolean
+        get() = prefs.getBoolean(KEY_TOUCH_GUESS, true)
+        set(value) = prefs.edit().putBoolean(KEY_TOUCH_GUESS, value).apply()
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -82,6 +87,7 @@ class DictationSettings(context: Context) {
         private const val KEY_AUTOCORRECT = "autocorrect"
         private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
         private const val KEY_EDIT_LOG = "edit_log"
+        private const val KEY_TOUCH_GUESS = "touch_guess"
         private const val KEY_ENTER_COLOR = "enter_color"
         private const val KEY_MIC_COLOR = "mic_color"
         private const val KEY_SPARKLE_COLOR = "sparkle_color"

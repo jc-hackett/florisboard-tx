@@ -527,11 +527,11 @@ abstract class FlorisPreferenceModel : PreferenceModel() {
         )
         val keySpacingVertical = int(
             key = "keyboard__key_spacing_vertical",
-            default = 100,
+            default = 60, // florisboard-tx: tighter gaps, bigger targets (closer to Gboard)
         )
         val keySpacingHorizontal = int(
             key = "keyboard__key_spacing_horizontal",
-            default = 100,
+            default = 70, // florisboard-tx: tighter gaps, bigger targets (closer to Gboard)
         )
         val popupEnabled = boolean(
             key = "keyboard__popup_enabled",
