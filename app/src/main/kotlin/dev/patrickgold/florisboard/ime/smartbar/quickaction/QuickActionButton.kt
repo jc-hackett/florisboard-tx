@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.StopCircle
@@ -174,6 +175,16 @@ fun QuickActionButton(
                             } else {
                                 SnyggIcon(imageVector = sparkleIcon)
                             }
+                        }
+                    }
+
+                    is QuickAction.ThumbsDown -> {
+                        SnyggBox(
+                            elementName = "$elementName-icon",
+                            attributes = attributes,
+                            selector = selector,
+                        ) {
+                            SnyggIcon(imageVector = Icons.Default.ThumbDown)
                         }
                     }
 

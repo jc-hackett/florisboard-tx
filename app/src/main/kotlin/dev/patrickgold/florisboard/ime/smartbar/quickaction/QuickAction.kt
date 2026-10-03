@@ -79,6 +79,20 @@ sealed class QuickAction {
         }
     }
 
+    /** Thumbs-down: flags the most recent dictation or AI cleanup as bad, for tuning. */
+    @Serializable
+    @SerialName("thumbs_down")
+    data object ThumbsDown : QuickAction() {
+        override fun onPointerUp(context: Context) {
+            val ok = dev.patrickgold.florisboard.ime.ai.EditLog.markLatest(context)
+            android.widget.Toast.makeText(
+                context,
+                if (ok) "Marked as bad. It's in Recent edits." else "Nothing recent to mark. Select the text and use Mark as bad instead.",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
     @Serializable
     @SerialName("insert_key")
     data class InsertKey(val data: KeyData) : QuickAction() {
@@ -155,6 +169,7 @@ fun QuickAction.computeDisplayName(evaluator: ComputingEvaluator): String {
         })
         is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate)
         is QuickAction.AiCleanup -> stringRes(R.string.quick_action__ai_cleanup)
+        is QuickAction.ThumbsDown -> "Mark bad"
         is QuickAction.InsertText -> data
     }
 }
@@ -197,6 +212,7 @@ fun QuickAction.computeTooltip(evaluator: ComputingEvaluator): String {
         })
         is QuickAction.Dictate -> stringRes(R.string.quick_action__dictate__tooltip)
         is QuickAction.AiCleanup -> stringRes(R.string.quick_action__ai_cleanup__tooltip)
+        is QuickAction.ThumbsDown -> "Thumbs down on the last dictation or cleanup"
         is QuickAction.InsertText -> "Insert text '$data'"
     }
 }

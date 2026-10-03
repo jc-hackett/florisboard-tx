@@ -194,6 +194,10 @@ fun DictationScreen() = FlorisScreen {
             onClick = { touchGuess = !touchGuess; settings.touchGuess = touchGuess },
         )
         Preference(
+            title = "Last copied image",
+            summary = dev.patrickgold.florisboard.ime.clipboard.ClipboardManager.lastImageEvent,
+        )
+        Preference(
             title = "Recent edits",
             summary = "Before and after for each dictation and cleanup, with notes, to tune the cleanup.",
             onClick = { navController.navigate(Routes.Settings.Edits) },

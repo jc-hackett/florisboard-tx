@@ -58,6 +58,8 @@ class ClipboardManager(
     context: Context,
 ) : AndroidClipboardManager_OnPrimaryClipChangedListener, Closeable {
     companion object {
+        /** florisboard-tx: what happened to the last copied image or video, in plain words. */
+        @Volatile var lastImageEvent: String = "no image copied since the keyboard started"
         // 1 minute
         private const val INTERVAL = 60 * 1000L
 
@@ -204,7 +206,19 @@ class ClipboardManager(
 
                 val isEqual = internalPrimaryClip?.isEqualTo(systemPrimaryClip) == true
                 if (!isEqual) {
-                    val item = ClipboardItem.fromClipData(appContext, systemPrimaryClip, cloneUri = true)
+                    // florisboard-tx: trace image copies in plain words (Settings > Customization).
+                    val desc = systemPrimaryClip.description
+                    val isMedia = systemPrimaryClip.getItemAt(0).uri != null
+                    val item = try {
+                        ClipboardItem.fromClipData(appContext, systemPrimaryClip, cloneUri = true)
+                    } catch (e: Exception) {
+                        if (isMedia) lastImageEvent = "copy seen (${desc.getMimeType(0)}), but saving it failed: ${e.javaClass.simpleName} ${e.message ?: ""}"
+                        throw e
+                    }
+                    if (isMedia) {
+                        lastImageEvent = "copy seen (${desc.getMimeType(0)}): stored as ${item.type}" +
+                            (if (prefs.clipboard.historyEnabled.get()) "" else ", but clipboard history is off")
+                    }
                     primaryClip = item
                     insertOrMoveBeginning(item)
                 }

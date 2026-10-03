@@ -123,6 +123,20 @@
         </activity-alias>
 
         <!-- Crash Dialog Activity -->
+        <!-- florisboard-tx: "Mark as bad" in the text-selection menu -->
+        <activity
+            android:name="dev.patrickgold.florisboard.ime.ai.MarkBadActivity"
+            android:label="Mark as bad 👎"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+        </activity>
         <activity
             android:name="dev.patrickgold.florisboard.lib.crashutility.CrashDialogActivity"
             android:icon="@mipmap/floris_app_icon"

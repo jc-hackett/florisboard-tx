@@ -46,13 +46,34 @@ object EditLog {
     private const val MAX_ENTRIES = 200
     private const val KEEP_MS = 7L * 24 * 60 * 60 * 1000
 
+    /** The most recent result (kind, before, after), kept in memory only, for the thumbs-down. */
+    @Volatile private var lastResult: Triple<String, String, String>? = null
+
     @Synchronized
     fun add(context: Context, kind: String, before: String, after: String) {
+        lastResult = Triple(kind, before, after)
         if (!DictationSettings(context).editLog) return
         val list = load(context)
         val now = System.currentTimeMillis()
         list.add(0, Entry(now, now, kind, before.trim(), after.trim(), ""))
         save(context, list.take(MAX_ENTRIES))
+    }
+
+    /** A 👎: always kept (it's an explicit choice), whether or not the log is switched on. */
+    @Synchronized
+    fun addMarked(context: Context, kind: String, before: String, after: String) {
+        val list = load(context)
+        val now = System.currentTimeMillis()
+        list.add(0, Entry(now, now, kind, before.trim(), after.trim(), "👎"))
+        save(context, list.take(MAX_ENTRIES))
+    }
+
+    /** Thumbs-down on the most recent dictation or cleanup. False if there's nothing to mark. */
+    fun markLatest(context: Context): Boolean {
+        val (kind, before, after) = lastResult ?: return false
+        addMarked(context, "$kind 👎", before, after)
+        lastResult = null
+        return true
     }
 
     @Synchronized

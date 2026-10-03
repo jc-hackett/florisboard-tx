@@ -37,6 +37,7 @@ val QuickActionJsonConfig = Json(DefaultJsonConfig) {
             subclass(QuickAction.InsertText::class, QuickAction.InsertText.serializer())
             subclass(QuickAction.Dictate::class, QuickAction.Dictate.serializer())
             subclass(QuickAction.AiCleanup::class, QuickAction.AiCleanup.serializer())
+            subclass(QuickAction.ThumbsDown::class, QuickAction.ThumbsDown.serializer())
             defaultDeserializer { QuickAction.InsertKey.serializer() }
         }
     }
@@ -92,6 +93,7 @@ data class QuickActionArrangement(
                 QuickAction.InsertKey(TextKeyData.LANGUAGE_SWITCH),
                 QuickAction.InsertKey(TextKeyData.FORWARD_DELETE),
                 QuickAction.InsertKey(TextKeyData.IME_HIDE_UI),
+                QuickAction.ThumbsDown,
                 QuickAction.InsertKey(TextKeyData.TOGGLE_RESIZE_MODE),
             ),
             hiddenActions = listOf(
