@@ -33,10 +33,74 @@ def _cmd(words: str) -> str:
     return rf"{_PUNCT}\s*(?<![\w'])(?:{words})(?![\w']){_PUNCT}"
 
 
+# --- Spoken Markdown: "MD" + a command (added 2026-10-03) -----------------------------------
+# The speech model may hear "MD" as "M.D.", "MD", "Md", "em dee", or the word "markdown".
+_MD = r"(?:m\.?\s?d\.?|em\s?dee|markdown)"
+_URL_JOINERS = ("dot", "slash", "colon", "dash", "hyphen")
+_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]*\)")
+_NUM = {"one": "1", "won": "1", "two": "2", "to": "2", "too": "2", "three": "3", "1": "1", "2": "2", "3": "3"}
+
+
+def _spoken_url(words: str) -> str:
+    """'proton dot me slash pricing' -> 'https://proton.me/pricing'."""
+    u = words.strip().strip(" .,").lower()
+    u = re.sub(r"\s*\b(?:dot)\b\s*", ".", u)
+    u = re.sub(r"\s*\b(?:slash)\b\s*", "/", u)
+    u = re.sub(r"\s*\b(?:colon)\b\s*", ":", u)
+    u = re.sub(r"\s*\b(?:dash|hyphen)\b\s*", "-", u)
+    u = u.replace(" ", "")
+    if not re.match(r"^[a-z]+://", u):
+        u = "https://" + u
+    return u
+
+
+def markdown(text: str) -> str:
+    t = text
+    # Links first: "MD link <text> MD to <address>" -> [text](https://address). The address is
+    # read word by word ("proton dot me slash pricing") and ends at the first ordinary word.
+    def link(m):
+        label = m.group(1).strip(" ,.")
+        words = m.group(2).split()
+        taken = words[:1]
+        i = 1
+        while i + 1 < len(words) and words[i].lower().strip(",.") in _URL_JOINERS:
+            taken += words[i:i + 2]
+            i += 2
+        end_punct = ""
+        if taken and taken[-1][-1:] in ",.;!?":
+            end_punct = taken[-1][-1]
+            taken[-1] = taken[-1][:-1]
+        rest = " ".join(words[i:])
+        return f"[{label}]({_spoken_url(' '.join(taken))}){end_punct}" + (" " + rest if rest else "")
+    t = re.sub(rf"(?i)\b{_MD}[,.]?\s+link[,.]?\s+(.+?)[,.]?\s+{_MD}[,.]?\s+(?:to|url|address)[,.]?\s+([^\n]+)",
+               link, t)
+    # Headings: "MD H1 Title" -> "# Title", on its own line.
+    def heading(m):
+        n = _NUM.get(m.group(1).lower(), "1")
+        return "\n" + "#" * int(n) + " "
+    t = re.sub(rf"(?i)[ \t]*\b{_MD}[,.]?\s+(?:h|age|each)[\s-]?(one|won|two|to|too|three|[123])\b[,.:]?\s*", heading, t)
+    # Line starters.
+    for words, mark in [(r"bullet(?:\s?point)?", "- "), (r"check\s?box", "- [ ] "),
+                        (r"number(?:ed)?(?:\s?item)?", "1. "), (r"quote|block\s?quote", "> ")]:
+        t = re.sub(rf"(?i)[ \t]*\b{_MD}[,.]?\s+(?:{words})\b[,.:]?\s*", "\n" + mark, t)
+    # Inline toggles: "MD bold" ... "MD bold" -> **...**
+    for words, mark in [(r"bold", "**"), (r"italics?", "*"), (r"code", "`")]:
+        t = re.sub(rf"(?i)\s*\b{_MD}[,.]?\s+(?:{words})\b[,.]?\s*(.+?)\s*\b{_MD}[,.]?\s+(?:end\s+)?(?:{words})\b",
+                   lambda m, k=mark: f" {k}{m.group(1).strip(' ,.')}{k}", t)
+    # Tidy: no leading newline at the very start, no doubled blank lines from consecutive commands.
+    t = re.sub(r"\n{3,}", "\n\n", t).lstrip("\n")
+    t = re.sub(r"(?m)^(#{1,3} .*?)\.[ \t]*$", r"\1", t)  # headings don't end in a full stop
+    return t
+
+
 def apply(text: str) -> str:
     if not text:
         return text
-    t = text
+    t = markdown(text)
+    # Keep finished Markdown links out of the punctuation and spacing rules below.
+    links = _LINK.findall(t)
+    for i, link in enumerate(links):
+        t = t.replace(link, f"\x00{i}\x00", 1)
 
     # "quote unquote freedom" -> "freedom" in quotes (the scare-quote idiom).
     t = re.sub(rf"(?i){_cmd('quote,? unquote')}\s*([\w'-]+)", lambda m: f' "{m.group(1)}"', t)
@@ -59,6 +123,8 @@ def apply(text: str) -> str:
     t = re.sub(r"[ \t]{2,}", " ", t)
     t = re.sub(r"[ \t]*\n[ \t]*", "\n", t)
     t = re.sub(r"(\n)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)  # a new line starts a sentence
+    for i, link in enumerate(links):
+        t = t.replace(f"\x00{i}\x00", link)
     return t.strip(" ")
 
 
@@ -76,6 +142,11 @@ if __name__ == "__main__":
         "That is all period",
         "That is all period. Next thing.",
         "Check his colon and comma please.",
+        "MD H1 Meeting notes. MD bullet call Tony. MD bullet send the spec.",
+        "M.D. H2, next steps md checkbox book the room",
+        "This is MD bold really important MD bold, okay.",
+        "See MD link Proton Mail MD to proton dot me for details.",
+        "Markdown H three Summary",
     ]
     for s in tests:
         print(repr(s), "->", repr(apply(s)))
