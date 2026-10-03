@@ -123,8 +123,13 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         }
         val lower = typed.lowercase()
         val count = maxCandidateCount.coerceIn(1, 3)
+        // The user's own words (their list + the server's) come first: "sov" -> SovereignBoard.
+        val settings = dev.patrickgold.florisboard.ime.ai.DictationSettings(appContext)
+        dev.patrickgold.florisboard.ime.ai.WordSync.refreshIfStale(appContext)
+        val mine = settings.myWords.filter { it.length > lower.length && it.lowercase().startsWith(lower) }
         return wordData.withLock { data ->
             val typedFreq = data[lower] ?: 0
+            val myFinish = mine.size == 1 && lower.length >= 3 && typedFreq < COMMON_WORD_FREQ
             val completions = data.entries.asSequence()
                 .filter { it.key.length > lower.length && it.key.startsWith(lower) }
                 .sortedByDescending { it.value }
@@ -132,7 +137,7 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
                 .toList()
             val top = completions.firstOrNull()
             val second = completions.getOrNull(1)
-            val autoFinish = top != null && lower.length >= 2 &&
+            val autoFinish = !myFinish && mine.isEmpty() && top != null && lower.length >= 2 &&
                 typedFreq < COMMON_WORD_FREQ && top.value >= CONFIDENT_COMPLETION_FREQ &&
                 (second == null || top.value - second.value >= COMPLETION_LEAD)
             buildList {
@@ -140,8 +145,18 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
                     add(WordSuggestionCandidate(text = typed, confidence = typedFreq / 255.0,
                         sourceProvider = this@LatinLanguageProvider))
                 }
+                mine.take(count).forEach { word ->
+                    if (size >= count) return@forEach
+                    add(WordSuggestionCandidate(
+                        text = word,
+                        confidence = 1.0,
+                        isEligibleForAutoCommit = myFinish,
+                        sourceProvider = this@LatinLanguageProvider,
+                    ))
+                }
                 completions.forEachIndexed { i, (word, freq) ->
                     if (size >= count) return@forEachIndexed
+                    if (mine.any { it.equals(word, ignoreCase = true) }) return@forEachIndexed
                     add(WordSuggestionCandidate(
                         text = matchCase(typed, word),
                         confidence = freq / 255.0,

@@ -76,6 +76,19 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_TOUCH_GUESS, true)
         set(value) = prefs.edit().putBoolean(KEY_TOUCH_GUESS, value).apply()
 
+    /** Spellings from the server's own word list (see WordSync), cached here. */
+    var serverWords: String
+        get() = prefs.getString(KEY_SERVER_WORDS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SERVER_WORDS, value).apply()
+    var serverWordsFetchedAt: Long
+        get() = prefs.getLong(KEY_SERVER_WORDS_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_SERVER_WORDS_AT, value).apply()
+
+    /** The user's own words for suggestions: their list (spellings only) plus the server's. */
+    val myWords: List<String>
+        get() = (wordList.map { it.substringBefore('=').trim() } + serverWords.lines().map { it.trim() })
+            .filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -89,6 +102,8 @@ class DictationSettings(context: Context) {
         private const val KEY_AUTOCORRECT = "autocorrect"
         private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
         private const val KEY_EDIT_LOG = "edit_log"
+        private const val KEY_SERVER_WORDS = "server_words"
+        private const val KEY_SERVER_WORDS_AT = "server_words_at"
         private const val KEY_TOUCH_GUESS = "touch_guess"
         private const val KEY_ENTER_COLOR = "enter_color"
         private const val KEY_MIC_COLOR = "mic_color"

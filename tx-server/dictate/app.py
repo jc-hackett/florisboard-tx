@@ -74,7 +74,6 @@ stt = Transcriber(model_path=_model_path, model_arch=_model_arch,
 # One model shared by every request; feeding is serialised so two phones can't trip over it.
 stt_lock = threading.Lock()
 MAX_TERMS = 200
-_file_terms_mtime = None
 _file_terms: list = []
 _active_terms = None
 _aliases: dict = {}  # "lim" -> "limn": sound-alikes the model can't tell apart
@@ -106,21 +105,45 @@ def _apply_aliases(text: str) -> str:
     return re.sub(pattern, lambda m: _aliases[m.group(1).lower()], text, flags=re.IGNORECASE)
 
 
-def _refresh_keyterms(phone_terms=()):
-    """Point the model at the word list: the server file plus whatever the phone sent (its
-    Settings > Dictation list). Cheap no-op unless the combined list changed. With one shared
-    model the list is global, which is fine while each server serves one person."""
-    global _file_terms_mtime, _file_terms, _active_terms, _aliases
+_terms_cache: dict = {}  # path -> (mtime, lines)
+
+
+def _read_terms(path: str) -> list:
     try:
-        mtime = os.path.getmtime(KEYTERMS_FILE)
+        mtime = os.path.getmtime(path)
     except OSError:
-        mtime = None
-    if mtime != _file_terms_mtime:
-        _file_terms = []
-        if mtime is not None:
-            with open(KEYTERMS_FILE, encoding="utf-8") as f:
-                _file_terms = list(f)
-        _file_terms_mtime = mtime
+        return []
+    cached = _terms_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    with open(path, encoding="utf-8") as f:
+        lines = list(f)
+    _terms_cache[path] = (mtime, lines)
+    return lines
+
+
+def _user_terms_file(user: str | None) -> str | None:
+    """Per-person word list next to the shared one: keyterms-<user>.txt (names stay private)."""
+    if not user or not re.fullmatch(r"[a-z0-9_-]{1,40}", user):
+        return None
+    return os.path.join(os.path.dirname(KEYTERMS_FILE), f"keyterms-{user}.txt")
+
+
+def _server_terms(user: str | None) -> list:
+    """Shared list (everyone) + this person's own list."""
+    lines = list(_read_terms(KEYTERMS_FILE))
+    own = _user_terms_file(user)
+    if own:
+        lines += _read_terms(own)
+    return lines
+
+
+def _refresh_keyterms(phone_terms=(), user: str | None = None):
+    """Point the model at the word list: the shared server file, this person's own file, and
+    whatever their phone sent. Cheap no-op unless the combined list changed. The model is shared,
+    so the list is set per request; fine at this scale."""
+    global _file_terms, _active_terms, _aliases
+    _file_terms = _server_terms(user)
     file_words, file_aliases = _parse_terms(_file_terms)
     phone_words, phone_aliases = _parse_terms(phone_terms)
     _aliases = {**file_aliases, **phone_aliases}
@@ -418,6 +441,13 @@ async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: 
     return {"text": text, "raw": raw, "cleaned": cleaned, "ms": ms}  # raw: for the phone's opt-in edit log
 
 
+@app.get("/v1/words")
+def words(user: str = Depends(auth)):
+    """The server's word list (spellings only, no sound-alikes), so the phone can suggest them."""
+    terms, _ = _parse_terms(_server_terms(user))
+    return {"words": terms}
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "stt": _model_arch.name.lower(),
@@ -426,7 +456,7 @@ def healthz():
 
 @app.post("/v1/dictate/stream")
 async def dictate_stream(request: Request, cleanup: bool = True, user: str = Depends(auth)):
-    await run_in_threadpool(_refresh_keyterms, _phone_terms(request))
+    await run_in_threadpool(_refresh_keyterms, _phone_terms(request), user)
     live = await run_in_threadpool(_LiveStream)
     received = 0
     try:
@@ -489,7 +519,7 @@ async def dictate(audio: UploadFile = File(...), cleanup: bool = Form(True),
     seconds = len(pcm) / SAMPLE_RATE
     if seconds > MAX_SECONDS:
         raise HTTPException(413, "clip too long")
-    await run_in_threadpool(_refresh_keyterms)
+    await run_in_threadpool(_refresh_keyterms, (), user)
     text = await run_in_threadpool(_transcribe_whole, pcm)
     del pcm
     t_text = time.perf_counter()
