@@ -445,7 +445,7 @@ private class TextKeyboardLayoutController(
         }
         val directLetter = letterOf(direct) ?: return direct
         if (dist(direct) <= INNER_ZONE) return direct
-        val candidates = keyboard.keys().mapNotNull { k ->
+        val candidates = keyboard.keys().asSequence().mapNotNull { k ->
             val l = letterOf(k) ?: return@mapNotNull null
             val d = dist(k)
             if (d <= NEIGHBOUR_ZONE) Triple(k, l, d) else null
