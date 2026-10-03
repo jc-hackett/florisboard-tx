@@ -126,13 +126,13 @@ class AiCleanup private constructor(context: Context) {
         val snap = snapshot(ic) ?: return note("skipped: this app won't let the keyboard read the box")
         val full = snap.text
         val cursor = snap.selStart
-        if (cursor < 3 || cursor > full.length || !full.substring(0, cursor).endsWith(". ")) {
-            return note("skipped: couldn't find the period it just typed")
+        if (cursor < 3 || cursor > full.length || full[cursor - 1] != ' ' || full[cursor - 2] !in SEGMENT_ENDS) {
+            return note("skipped: couldn't find the punctuation it just typed")
         }
         // The sentence: from the previous sentence end (or line start) up to and including the ".".
         val end = cursor - 1
         val head = full.substring(0, end - 1)
-        val prevEnd = head.lastIndexOfAny(charArrayOf('.', '!', '?', '\n'))
+        val prevEnd = head.lastIndexOfAny(SEGMENT_ENDS + '\n')
         var start = prevEnd + 1
         while (start < end && full[start].isWhitespace()) start++
         val sentence = full.substring(start, end)
@@ -244,6 +244,10 @@ class AiCleanup private constructor(context: Context) {
         private const val MAX_CHARS = 6000
         /** Must match the server's TIDY_MAX_CHARS. */
         private const val SEND_MAX = 2000
+
+        /** Marks that end a stretch worth cleaning when followed by a space (commas left out on
+         *  purpose: half-sentences clean badly and would use up the per-minute limit). */
+        val SEGMENT_ENDS = charArrayOf('.', '?', '!', ':', ';', '…', '—', '–')
         private const val UNDO_WINDOW_MS = 60_000L
         private val PASSWORDS = setOf(
             InputAttributes.Variation.PASSWORD,

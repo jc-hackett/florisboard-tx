@@ -608,7 +608,13 @@ class KeyboardManager(context: Context) : InputKeyEventReceiver {
         // TODO: this is whether we commit space after selecting candidate. Should be determined by SuggestionProvider
         if (!subtypeManager.activeSubtype.primaryLocale.supportsAutoSpace &&
                 candidate != null) { /* Do nothing */ } else {
+            // florisboard-tx: a space after . ? ! : ; … or a dash ends a stretch worth tidying.
+            // (Read the mark before the space goes in: the cached text lags a commit behind.)
+            val markBefore = editorInstance.run { activeContent.getTextBeforeCursor(1) }
             editorInstance.commitText(KeyCode.SPACE.toChar().toString())
+            if (!activeState.isIncognitoMode && markBefore.length == 1 && markBefore[0] in AiCleanup.SEGMENT_ENDS) {
+                AiCleanup.get(appContext).cleanSentenceJustEnded(editorInstance.activeInfo)
+            }
         }
     }
 
