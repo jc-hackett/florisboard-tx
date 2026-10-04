@@ -89,6 +89,11 @@ class DictationSettings(context: Context) {
         get() = (wordList.map { it.substringBefore('=').trim() } + serverWords.lines().map { it.trim() })
             .filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
 
+    /** Get test builds early (the person running the server); everyone else gets releases only. */
+    var testLane: Boolean
+        get() = prefs.getBoolean(KEY_TEST_LANE, false)
+        set(value) = prefs.edit().putBoolean(KEY_TEST_LANE, value).apply()
+
     val wordList: List<String>
         get() = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_WORDS)
 
@@ -102,6 +107,7 @@ class DictationSettings(context: Context) {
         private const val KEY_AUTOCORRECT = "autocorrect"
         private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
         private const val KEY_EDIT_LOG = "edit_log"
+        private const val KEY_TEST_LANE = "test_lane"
         private const val KEY_SERVER_WORDS = "server_words"
         private const val KEY_SERVER_WORDS_AT = "server_words_at"
         private const val KEY_TOUCH_GUESS = "touch_guess"

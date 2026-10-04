@@ -48,9 +48,11 @@ class AppUpdater(context: Context) {
 
     /** Returns the newer release, or null when this is already the latest. Throws on failure. */
     suspend fun check(serverUrl: String): Release? = withContext(Dispatchers.IO) {
-        val base = serverUrl.trim().trimEnd('/')
+        // Two lanes: the test lane (<server>/app/beta/) gets every build; everyone else gets only
+        // versions released on purpose (<server>/app/).
+        val base = serverUrl.trim().trimEnd('/') + if (DictationSettings(appContext).testLane) "/app/beta" else "/app"
         require(base.startsWith("https://")) { "server address must start with https://" }
-        val json = get("$base/app/latest.json").toString(Charsets.UTF_8)
+        val json = get("$base/latest.json").toString(Charsets.UTF_8)
         val o = JSONObject(json)
         val build = o.getString("build")
         if (build.equals(currentBuild, ignoreCase = true)) return@withContext null
@@ -58,7 +60,7 @@ class AppUpdater(context: Context) {
             build = build,
             short = o.optString("short", build.take(8)),
             sha256 = o.getString("sha256"),
-            apkUrl = "$base/app/" + o.optString("apk", "florisboard-tx.apk"),
+            apkUrl = "$base/" + o.optString("apk", "florisboard-tx.apk"),
         )
     }
 

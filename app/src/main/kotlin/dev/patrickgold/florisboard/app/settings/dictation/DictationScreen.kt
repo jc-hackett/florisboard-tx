@@ -64,6 +64,7 @@ fun DictationScreen() = FlorisScreen {
     var autocorrect by remember { mutableStateOf(settings.autocorrect) }
     var autoCleanup by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var touchGuess by remember { mutableStateOf(settings.touchGuess) }
+    var testLane by remember { mutableStateOf(settings.testLane) }
     var enterColor by remember { mutableStateOf(settings.enterColor) }
     var micColor by remember { mutableStateOf(settings.micColor) }
     var sparkleColor by remember { mutableStateOf(settings.sparkleColor) }
@@ -183,6 +184,15 @@ fun DictationScreen() = FlorisScreen {
                 if (autoCleanup) R.string.dictation__auto_cleanup__on else R.string.dictation__auto_cleanup__off
             ) + "\nLast sentence: " + AiCleanup.lastAutoEvent,
             onClick = { autoCleanup = !autoCleanup; settings.autoCleanupOnPeriod = autoCleanup },
+        )
+        Preference(
+            title = "Test versions",
+            summary = if (testLane) {
+                "On. You get every new build first, before it's released to everyone. Tap to switch back to releases."
+            } else {
+                "Off. You get tested releases. Tap to get test versions early (for testers)."
+            },
+            onClick = { testLane = !testLane; settings.testLane = testLane; release = null },
         )
         Preference(
             title = "Smarter tapping",

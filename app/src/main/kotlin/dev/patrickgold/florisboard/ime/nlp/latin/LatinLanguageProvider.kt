@@ -119,6 +119,10 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         // letters are not a common word themselves and one completion clearly leads, so "in"
         // stays "in" while "tomo" becomes "tomorrow".
         val typed = content.composingText
+        val selected = content.selectedText.trim()
+        if (selected.isNotEmpty() && selected.length <= 30 && selected.all { it.isLetter() || it == '\'' }) {
+            return alternativesFor(selected, maxCandidateCount.coerceIn(1, 3))
+        }
         if (typed.isBlank()) return predictNext(content, maxCandidateCount.coerceIn(1, 3))
         if (typed.length > 40 || !typed.all { it.isLetter() || it == '\'' }) {
             return emptyList()
@@ -168,6 +172,48 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
                 }
             }
         }
+    }
+
+    /**
+     * florisboard-tx: a selected word shows what else it could be, like Gboard: the closest common
+     * words (one or two letters different, neighbour swaps count as one), most common first.
+     * Tapping one replaces the selection.
+     */
+    private suspend fun alternativesFor(selected: String, count: Int): List<SuggestionCandidate> {
+        val lower = selected.lowercase()
+        val maxDist = if (lower.length <= 3) 1 else 2
+        val mine = dev.patrickgold.florisboard.ime.ai.DictationSettings(appContext).myWords
+        return wordData.withLock { data ->
+            val fromDict = data.entries.asSequence()
+                // (the list holds common typos around 130-155, so only offer clearly real words)
+                .filter { (w, f) -> f >= COMMON_WORD_FREQ && w != lower && kotlin.math.abs(w.length - lower.length) <= maxDist }
+                .mapNotNull { (w, f) -> osaDistance(lower, w, maxDist)?.let { d -> Triple(w, d, f) } }
+                .sortedWith(compareBy<Triple<String, Int, Int>>({ it.second }, { -it.third }))
+                .map { matchCase(selected, it.first) }
+            val fromMine = mine.filter { it.lowercase() != lower && osaDistance(lower, it.lowercase(), maxDist) != null }
+            (fromMine.asSequence() + fromDict).distinctBy { it.lowercase() }.take(count).map {
+                WordSuggestionCandidate(text = it, confidence = 0.5, sourceProvider = this@LatinLanguageProvider)
+            }.toList()
+        }
+    }
+
+    /** Edit distance (neighbour swaps count as one), or null if it is over [max]. */
+    private fun osaDistance(a: String, b: String, max: Int): Int? {
+        val d = Array(a.length + 1) { IntArray(b.length + 1) }
+        for (i in 0..a.length) d[i][0] = i
+        for (j in 0..b.length) d[0][j] = j
+        for (i in 1..a.length) {
+            var rowMin = Int.MAX_VALUE
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                var v = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) v = minOf(v, d[i - 2][j - 2] + 1)
+                d[i][j] = v
+                if (v < rowMin) rowMin = v
+            }
+            if (rowMin > max) return null
+        }
+        return d[a.length][b.length].takeIf { it <= max }
     }
 
     /** word -> likely next words, best first (assets ime/dict/next-words.tsv). Loaded once. */
