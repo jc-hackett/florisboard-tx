@@ -158,15 +158,18 @@ class AiCleanup private constructor(context: Context) {
                 waited += 250
             }
             if (editorInstance.activeContent.composing.let { it.isValid && it.length > 0 }) {
+                toast("Auto-sparkle skipped: you were still typing")
                 return@launch note("not changed: you kept typing")
             }
             val ic2 = FlorisImeService.currentInputConnection() ?: return@launch note("not changed: text box closed")
             val now = snapshot(ic2) ?: return@launch note("not changed: couldn't read the box again")
             val text = now.text
             if (text.length < end || text.substring(start, end) != sentence) {
+                toast("Auto-sparkle skipped: that sentence changed")
                 return@launch note("not changed: you edited that sentence meanwhile")
             }
             if (now.selStart < end || now.selEnd < end) {
+                toast("Auto-sparkle skipped: you moved back into the text")
                 return@launch note("not changed: your cursor moved into or before that sentence")
             }
             val delta = cleaned.length - sentence.length
