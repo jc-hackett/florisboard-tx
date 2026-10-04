@@ -45,6 +45,7 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         private const val COMMON_WORD_FREQ = 160
         private const val CONFIDENT_COMPLETION_FREQ = 170
         private const val COMPLETION_LEAD = 5
+        private val SENTENCE_STARTERS = listOf("I", "The", "Thanks")
     }
 
     private val appContext by context.appContext()
@@ -118,7 +119,8 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         // letters are not a common word themselves and one completion clearly leads, so "in"
         // stays "in" while "tomo" becomes "tomorrow".
         val typed = content.composingText
-        if (typed.isBlank() || typed.length > 40 || !typed.all { it.isLetter() || it == '\'' }) {
+        if (typed.isBlank()) return predictNext(content, maxCandidateCount.coerceIn(1, 3))
+        if (typed.length > 40 || !typed.all { it.isLetter() || it == '\'' }) {
             return emptyList()
         }
         val lower = typed.lowercase()
@@ -165,6 +167,48 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
                     ))
                 }
             }
+        }
+    }
+
+    /** word -> likely next words, best first (assets ime/dict/next-words.tsv). Loaded once. */
+    @Volatile private var nextWords: Map<String, List<String>>? = null
+
+    private fun loadNextWords(): Map<String, List<String>> {
+        nextWords?.let { return it }
+        val map = HashMap<String, List<String>>(20_000)
+        runCatching {
+            appContext.assets.open("ime/dict/next-words.tsv").bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    if (line.startsWith("#")) continue
+                    val tab = line.indexOf('\t')
+                    if (tab > 0) map[line.substring(0, tab)] = line.substring(tab + 1).split(' ')
+                }
+            }
+        }
+        nextWords = map
+        return map
+    }
+
+    /**
+     * florisboard-tx next-word prediction: with no word half-typed, fill the strip with the words
+     * most likely to come next ("what" -> is, you, the). Never auto-committed; tap to use.
+     */
+    private fun predictNext(content: EditorContent, count: Int): List<SuggestionCandidate> {
+        val trimmed = content.textBeforeSelection.trimEnd()
+        val sentenceStart = trimmed.isEmpty() || trimmed.last() in ".!?\n"
+        val prev = Regex("[\\p{L}']+$").find(trimmed)?.value?.lowercase()
+        val words = when {
+            sentenceStart -> SENTENCE_STARTERS
+            prev != null -> loadNextWords()[prev] ?: return emptyList()
+            else -> return emptyList()
+        }
+        return words.take(count).map { w ->
+            val shown = when {
+                w == "i" || w.startsWith("i'") -> "I" + w.drop(1)
+                sentenceStart -> w.replaceFirstChar { it.uppercaseChar() }
+                else -> w
+            }
+            WordSuggestionCandidate(text = shown, confidence = 0.5, sourceProvider = this@LatinLanguageProvider)
         }
     }
 
