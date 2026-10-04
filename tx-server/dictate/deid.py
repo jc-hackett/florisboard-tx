@@ -61,7 +61,10 @@ def deidentify(text: str):
             spans.append((m.start(), m.end(), kind))
 
     doc = _nlp(text)
+    persons = set()  # start offsets of tokens the language model itself calls a person ("James")
     for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            persons.update(t.idx for t in ent)
         kind = _LABELS.get(ent.label_)
         if kind:
             spans.append((ent.start_char, ent.end_char, kind))
@@ -85,7 +88,8 @@ def deidentify(text: str):
         tok = by_start.get(start)
         nxt = doc[tok.i + 1] if tok is not None and tok.i + 1 < len(doc) else None
         if (kind in ("NAME", "ORG", "GROUP") and " " not in word and len(word) > 3 and word.endswith("s")
-                and f"{word[:-1]}'s" in _DICT and nxt is not None and nxt.pos_ in ("NOUN", "PROPN")):
+                and f"{word[:-1]}'s" in _DICT and nxt is not None and nxt.pos_ in ("NOUN", "PROPN")
+                and (start not in persons or word not in _DICT)):  # a real name ending in s ("James") stays whole
             end -= 1
         adjusted.append((start, end, kind))
     spans = adjusted

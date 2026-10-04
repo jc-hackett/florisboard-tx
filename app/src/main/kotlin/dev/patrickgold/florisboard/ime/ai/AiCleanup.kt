@@ -18,11 +18,13 @@ package dev.patrickgold.florisboard.ime.ai
 
 import android.content.Context
 import dev.patrickgold.florisboard.FlorisImeService
+import dev.patrickgold.florisboard.editorInstance
 import dev.patrickgold.florisboard.ime.editor.FlorisEditorInfo
 import dev.patrickgold.florisboard.ime.editor.InputAttributes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -147,11 +149,25 @@ class AiCleanup private constructor(context: Context) {
                 return@launch note("not changed: ${e.message ?: "couldn't reach the server"}")
             } ?: return@launch note("not changed: empty answer")
             if (cleaned == sentence || cleaned.isEmpty()) return@launch note("checked: nothing to change")
+            // Wait until the user is between words: swapping text while a word is still being typed
+            // (the keyboard's "composing" word) put the cleaned sentence in the wrong place.
+            val editorInstance by appContext.editorInstance()
+            var waited = 0L
+            while (editorInstance.activeContent.composing.let { it.isValid && it.length > 0 } && waited < 8_000) {
+                delay(250)
+                waited += 250
+            }
+            if (editorInstance.activeContent.composing.let { it.isValid && it.length > 0 }) {
+                return@launch note("not changed: you kept typing")
+            }
             val ic2 = FlorisImeService.currentInputConnection() ?: return@launch note("not changed: text box closed")
             val now = snapshot(ic2) ?: return@launch note("not changed: couldn't read the box again")
             val text = now.text
             if (text.length < end || text.substring(start, end) != sentence) {
                 return@launch note("not changed: you edited that sentence meanwhile")
+            }
+            if (now.selStart < end || now.selEnd < end) {
+                return@launch note("not changed: your cursor moved into or before that sentence")
             }
             val delta = cleaned.length - sentence.length
             val newSelStart = if (now.selStart >= end) now.selStart + delta else now.selStart
