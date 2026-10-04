@@ -29,7 +29,9 @@ BRANCH = "feat/dictate"
 WORKFLOW = "android.yml"
 ARTIFACT = "app-debug.apk"
 PACKAGE = "me.jchackett.florisboardtx"
-OUT = "/srv/dictate-app"
+# Every successful build goes to the TEST lane only. Releasing to everyone is a separate,
+# deliberate step: /opt/apkpub/promote.py (copies the tested build into /srv/dictate-app).
+OUT = "/srv/dictate-app/beta"
 KEYDIR = "/root/apk-signing"
 SERVER_ONLY = ("tx-server/", ".github/", "README", "docs/")
 
