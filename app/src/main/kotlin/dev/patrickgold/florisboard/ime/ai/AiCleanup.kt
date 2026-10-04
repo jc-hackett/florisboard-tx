@@ -131,15 +131,19 @@ class AiCleanup private constructor(context: Context) {
         if (cursor < 3 || cursor > full.length || full[cursor - 1] != ' ' || full[cursor - 2] !in SEGMENT_ENDS) {
             return note("skipped: couldn't find the punctuation it just typed")
         }
-        // The sentence: from the previous sentence end (or line start) up to and including the ".".
+        // The whole paragraph up to and including the mark just typed, cleaned the same way the
+        // sparkle button cleans a box: one sentence on its own lacks the context to fix it well.
+        // If the paragraph is long, start at a sentence boundary that keeps it under the limit.
         val end = cursor - 1
-        val head = full.substring(0, end - 1)
-        val prevEnd = head.lastIndexOfAny(SEGMENT_ENDS + '\n')
-        var start = prevEnd + 1
+        var start = full.lastIndexOf('\n', end - 1) + 1
+        if (end - start > SEND_MAX) {
+            val window = full.substring(end - SEND_MAX, end - 1)
+            val cut = window.indexOfAny(SEGMENT_ENDS)
+            start = if (cut >= 0) end - SEND_MAX + cut + 1 else end - SEND_MAX
+        }
         while (start < end && full[start].isWhitespace()) start++
         val sentence = full.substring(start, end)
-        if (sentence.length < 3) return note("skipped: sentence too short")
-        if (sentence.length > SEND_MAX) return note("skipped: sentence too long")
+        if (sentence.length < 3) return note("skipped: too short")
         note("sent: \"${sentence.take(40)}\" (${snap.how})")
 
         scope.launch {
