@@ -74,6 +74,22 @@ def deidentify(text: str):
                     and not (tok.i > 0 and doc[tok.i - 1].text in {".", "!", "?", "\"", "'", ":"})):
                 spans.append((tok.idx, tok.idx + len(w), "NAME"))
 
+    # A possessive spoken without its apostrophe ("Johns visit") would be hidden whole, and the
+    # proofreader could never add the "'s". When a hidden name ends in "s", its "X's" form is a
+    # word the dictionary knows, and the next word is a thing rather than an action, hide only
+    # "John" and leave the "s" in view. ("James said" keeps "James" whole.)
+    by_start = {t.idx: t for t in doc}
+    adjusted = []
+    for start, end, kind in spans:
+        word = text[start:end]
+        tok = by_start.get(start)
+        nxt = doc[tok.i + 1] if tok is not None and tok.i + 1 < len(doc) else None
+        if (kind in ("NAME", "ORG", "GROUP") and " " not in word and len(word) > 3 and word.endswith("s")
+                and f"{word[:-1]}'s" in _DICT and nxt is not None and nxt.pos_ in ("NOUN", "PROPN")):
+            end -= 1
+        adjusted.append((start, end, kind))
+    spans = adjusted
+
     # Merge overlaps: keep the earliest-starting, then longest span.
     spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
     merged = []
