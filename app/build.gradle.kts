@@ -20,6 +20,12 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
         proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        // SovereignBoard: the commit this APK was built from, compared with latest.json for in-app updates
+        val buildCommit = System.getenv("GITHUB_SHA")?.takeIf { it.isNotBlank() }
+            ?: runCatching {
+                providers.exec { commandLine("git", "rev-parse", "HEAD") }.standardOutput.asText.get().trim()
+            }.getOrDefault("unknown")
+        buildConfigField("String", "BUILD_COMMIT_HASH", "\"$buildCommit\"")
     }
 
     buildTypes {

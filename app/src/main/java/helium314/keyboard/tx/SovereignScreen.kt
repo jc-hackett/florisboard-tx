@@ -31,6 +31,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import helium314.keyboard.settings.SearchSettingsScreen
+import kotlinx.coroutines.launch
 
 @Composable
 fun SovereignScreen(onClickBack: () -> Unit) {
@@ -58,6 +61,54 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         if (!micGranted) openAppSettings(ctx)
     }
 
+    // Keyboard updates (same flow as the FlorisBoard edition's AppUpdater)
+    val updater = remember { AppUpdater(ctx) }
+    val scope = rememberCoroutineScope()
+    var release by remember { mutableStateOf<AppUpdater.Release?>(null) }
+    var updateBusy by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf("This version: ${updater.currentBuild.take(8)}. Tap to check.") }
+
+    fun checkForUpdate() {
+        if (updateBusy) return
+        updateBusy = true
+        updateStatus = "Checking…"
+        scope.launch {
+            try {
+                release = updater.check()
+                updateStatus = release?.let { "Version ${it.short} is ready." }
+                    ?: "You have the latest version (${updater.currentBuild.take(8)})."
+            } catch (e: Exception) {
+                updateStatus = "Couldn't check: ${e.message ?: "no connection"}. Tap to retry."
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    fun installUpdate(r: AppUpdater.Release) {
+        if (updateBusy) return
+        if (!updater.canInstall()) {
+            updateStatus = "Allow this keyboard to install updates, then come back and tap again."
+            updater.openInstallPermission()
+            return
+        }
+        updateBusy = true
+        updateStatus = "Downloading ${r.short}…"
+        scope.launch {
+            try {
+                val apk = updater.download(r)
+                updateStatus = "Downloaded. Confirm the install on the next screen."
+                updater.install(apk)
+            } catch (e: Exception) {
+                updateStatus = "Download failed: ${e.message ?: "no connection"}. Tap to retry."
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { checkForUpdate() }
+
     SearchSettingsScreen(
         onClickBack = onClickBack,
         title = "SovereignBoard",
@@ -70,6 +121,24 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                Text("Keyboard updates", style = MaterialTheme.typography.titleMedium)
+                val r = release
+                Button(
+                    onClick = { if (r != null) installUpdate(r) else checkForUpdate() },
+                    enabled = !updateBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        when {
+                            updateBusy -> "Working…"
+                            r != null -> "Update available — install"
+                            updateStatus.startsWith("You have") -> "Up to date — check again"
+                            else -> "Check for updates"
+                        }
+                    )
+                }
+                Text(updateStatus, style = MaterialTheme.typography.bodyMedium)
+
                 Text("Dictation", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
                     value = server,

@@ -58,7 +58,7 @@ fun MainSettingsScreen(
                 // SovereignBoard: dictation server settings
                 Preference(
                     name = "SovereignBoard",
-                    description = "Dictation server, access token, microphone",
+                    description = "Keyboard updates, dictation server, AI cleanup, microphone",
                     onClick = onClickSovereign,
                     icon = R.drawable.sym_keyboard_voice_rounded
                 ) { NextScreenIcon() }
