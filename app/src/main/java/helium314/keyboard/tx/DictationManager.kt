@@ -2,10 +2,17 @@
 // SovereignBoard: ported from florisboard-tx (feat/dictate). Same gestures and guardrails.
 package helium314.keyboard.tx
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.inputmethodservice.InputMethodService
+import android.os.Build
+import android.os.PersistableBundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.InputTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -126,11 +133,32 @@ class DictationManager(private val ime: InputMethodService) {
                         // Keep a word that was being composed instead of replacing it.
                         ic.finishComposingText()
                         ic.commitText(text, 1)
+                        copyToClipboard(text)
                     }
                 }
             }
             _state.value = DictationState.IDLE
         }
+    }
+
+    /**
+     * Also puts the dictated text on the clipboard, so it lands in clipboard history (switch in the
+     * SovereignBoard settings, on by default). Never in password fields or incognito mode. Marked not
+     * sensitive, so Android 13+ shows the text in its overlay instead of hiding it.
+     */
+    private fun copyToClipboard(text: String) {
+        if (text.isEmpty() || !DictationSettings(appContext).copyToClipboard) return
+        if (Settings.getValues().mIncognitoModeEnabled) return
+        val inputType = ime.currentInputEditorInfo?.inputType ?: 0
+        if (InputTypeUtils.isAnyPasswordInputType(inputType)) return
+        val clipboard = appContext.getSystemService(ClipboardManager::class.java) ?: return
+        val clip = ClipData.newPlainText(CLIP_LABEL, text)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false)
+            }
+        }
+        runCatching { clipboard.setPrimaryClip(clip) }
     }
 
     /** Closes the microphone and lets the in-flight transcription finish. */
@@ -152,6 +180,9 @@ class DictationManager(private val ime: InputMethodService) {
     }
 
     companion object {
+        /** Label on clips made from a dictation (the clipboard suggestion chip skips these). */
+        const val CLIP_LABEL = "Dictation"
+
         private val sharedState = MutableStateFlow(DictationState.IDLE)
 
         /** What dictation is doing right now, for whoever draws the mic key. */

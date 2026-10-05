@@ -34,6 +34,7 @@ import helium314.keyboard.latin.utils.InputTypeUtils
 import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.ToolbarKey
 import helium314.keyboard.latin.utils.prefs
+import helium314.keyboard.tx.DictationManager // SovereignBoard:
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -191,6 +192,8 @@ class ClipboardHistoryManager(
         if (parent == null) return null
         val clipData = clipboardManager.primaryClip ?: return null
         if (clipData.itemCount == 0) return null
+        // SovereignBoard: a dictation copy is already typed in; don't offer to paste it again
+        if (clipData.description?.label?.toString() == DictationManager.CLIP_LABEL) return null
         val clipItem = clipData.getItemAt(0) ?: return null
         val hasText = clipData.description?.hasMimeType("text/*") == true
         val hasImage = clipData.description?.hasMimeType("image/*") == true && clipItem.uri != null

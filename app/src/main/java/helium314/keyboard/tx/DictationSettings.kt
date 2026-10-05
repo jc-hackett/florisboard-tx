@@ -34,8 +34,14 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_CLEANUP, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CLEANUP, value).apply()
 
+    /** Also put each dictation on the clipboard, so it lands in clipboard history. */
+    var copyToClipboard: Boolean
+        get() = prefs.getBoolean(KEY_COPY_TO_CLIPBOARD, true)
+        set(value) = prefs.edit().putBoolean(KEY_COPY_TO_CLIPBOARD, value).apply()
+
     companion object {
         private const val FILE = "dictation"
+        private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"
         const val DEFAULT_SERVER = "https://dictate.limn.dev"
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"

@@ -55,6 +55,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var token by remember { mutableStateOf(settings.token) }
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
+    var copyDictation by remember { mutableStateOf(settings.copyToClipboard) }
     var micGranted by remember { mutableStateOf(hasMic(ctx)) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micGranted = granted || hasMic(ctx)
@@ -182,6 +183,21 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Save") }
+
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Copy dictation to clipboard", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Each dictation also goes on the clipboard, so it shows in clipboard history. " +
+                                "Never in password fields or incognito mode.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = copyDictation,
+                        onCheckedChange = { copyDictation = it; settings.copyToClipboard = it },
+                    )
+                }
 
                 Text("AI cleanup", style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
