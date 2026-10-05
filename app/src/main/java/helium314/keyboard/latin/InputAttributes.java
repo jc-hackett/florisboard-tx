@@ -101,8 +101,8 @@ public final class InputAttributes {
         final boolean noMicrophone = mIsPasswordField
                 || InputTypeUtils.isEmailVariation(variation)
                 || hasNoMicrophoneKeyOption()
-                || !RichInputMethodManager.isInitialized() // avoid crash when only using spell checker
-                || !RichInputMethodManager.getInstance().isShortcutImeReady();
+                || !RichInputMethodManager.isInitialized(); // avoid crash when only using spell checker
+        // SovereignBoard: voice key no longer depends on a system voice IME (dictation is built in)
         mShouldShowVoiceInputKey = !noMicrophone;
 
         mDisableGestureFloatingPreviewText = InputAttributes.inPrivateImeOptions(

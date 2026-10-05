@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// SovereignBoard: ported from florisboard-tx (feat/dictate). Same gestures and guardrails.
+package helium314.keyboard.tx
+
+import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** What the dictation key is currently doing. */
+enum class DictationState { IDLE, RECORDING, WORKING, ERROR }
+
+/**
+ * Owns the dictation key's behaviour and the guardrails that stop a forgotten recording from
+ * sitting there with the microphone open.
+ *
+ * - A tap latches recording on; the next tap ends it ([onTap]).
+ * - A longer press records for as long as it is held ([onPointerDown] / [onPointerUp]).
+ * - A tap while it is still waiting for the text is the kill switch: it drops the connection,
+ *   types nothing and frees the key at once.
+ *
+ * A latched recording also ends itself after [MAX_SESSION_MS].
+ */
+class DictationManager(private val ime: InputMethodService) {
+    private val appContext = ime.applicationContext
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val _state = MutableStateFlow(DictationState.IDLE)
+    val state: StateFlow<DictationState> = _state.asStateFlow()
+
+    var transcriber: Transcriber = ServerTranscriber(appContext)
+
+    private var pressStartedAt = 0L
+    private var endOnRelease = false
+    @Volatile private var capturing = false
+    private var sessionJob: Job? = null
+
+    val isBusy: Boolean
+        get() = _state.value == DictationState.RECORDING || _state.value == DictationState.WORKING
+
+    /** A single tap on the voice key: start, stop, or cancel, depending on the state. */
+    fun onTap() {
+        when (_state.value) {
+            DictationState.RECORDING -> stopCapturing()
+            DictationState.WORKING -> {
+                // Kill switch: the user is done waiting. Drop it and free the key.
+                abort()
+                toast(DictationMessages.CANCELLED)
+            }
+            DictationState.IDLE, DictationState.ERROR -> start()
+        }
+    }
+
+    fun onPointerDown() {
+        when (_state.value) {
+            DictationState.RECORDING -> endOnRelease = true
+            DictationState.WORKING -> {
+                abort()
+                toast(DictationMessages.CANCELLED)
+            }
+            DictationState.IDLE, DictationState.ERROR -> {
+                pressStartedAt = System.currentTimeMillis()
+                endOnRelease = false
+                start()
+            }
+        }
+    }
+
+    fun onPointerUp() {
+        if (_state.value != DictationState.RECORDING) return
+        val heldFor = System.currentTimeMillis() - pressStartedAt
+        if (endOnRelease || heldFor >= TAP_THRESHOLD_MS) stopCapturing()
+        // Otherwise this was a tap: leave it latched and recording until the next press.
+    }
+
+    fun onPointerCancel() {
+        if (_state.value == DictationState.RECORDING) abort()
+    }
+
+    private fun start() {
+        capturing = true
+        _state.value = DictationState.RECORDING
+        sessionJob = scope.launch {
+            val hardStop = launch {
+                delay(MAX_SESSION_MS)
+                capturing = false
+            }
+            val text = try {
+                transcriber.transcribe(stillRecording = { capturing })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                hardStop.cancel()
+                _state.value = DictationState.ERROR
+                toast((e as? DictationException)?.userMessage ?: DictationMessages.NETWORK)
+                return@launch
+            }
+            hardStop.cancel()
+            if (_state.value != DictationState.RECORDING && _state.value != DictationState.WORKING) {
+                // Aborted while we were working; drop the result rather than typing it into
+                // whatever the user moved on to.
+                return@launch
+            }
+            _state.value = DictationState.WORKING
+            if (!text.isNullOrBlank()) {
+                withContext(Dispatchers.Main) {
+                    val ic = ime.currentInputConnection
+                    if (ic != null) {
+                        // Keep a word that was being composed instead of replacing it.
+                        ic.finishComposingText()
+                        ic.commitText(text, 1)
+                    }
+                }
+            }
+            _state.value = DictationState.IDLE
+        }
+    }
+
+    /** Closes the microphone and lets the in-flight transcription finish. */
+    private fun stopCapturing() {
+        capturing = false
+        _state.value = DictationState.WORKING
+    }
+
+    /** Closes the microphone and discards whatever was captured. */
+    fun abort() {
+        capturing = false
+        sessionJob?.cancel()
+        sessionJob = null
+        _state.value = DictationState.IDLE
+    }
+
+    private fun toast(message: String) {
+        mainHandler.post { Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show() }
+    }
+
+    companion object {
+        /** A press shorter than this latches; anything longer is treated as hold-to-talk. */
+        const val TAP_THRESHOLD_MS = 300L
+
+        /** Upper bound on a single latched recording. */
+        const val MAX_SESSION_MS = 120_000L
+    }
+}

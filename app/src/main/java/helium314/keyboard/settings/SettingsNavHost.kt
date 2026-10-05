@@ -34,6 +34,7 @@ import helium314.keyboard.settings.screens.TextCorrectionScreen
 import helium314.keyboard.settings.screens.ToolbarScreen
 import helium314.keyboard.settings.screens.gesturedata.GestureDataScreen
 import helium314.keyboard.settings.screens.gesturedata.ReviewScreen
+import helium314.keyboard.tx.SovereignScreen // SovereignBoard:
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -79,7 +80,11 @@ fun SettingsNavHost(
                 onClickLayouts = { navController.navigate(SettingsDestination.Layouts) },
                 onClickDictionaries = { navController.navigate(SettingsDestination.Dictionaries) },
                 onClickBack = ::goBack,
+                onClickSovereign = { navController.navigate(SettingsDestination.Sovereign) }, // SovereignBoard:
             )
+        }
+        composable(SettingsDestination.Sovereign) { // SovereignBoard:
+            SovereignScreen(onClickBack = ::goBack)
         }
         composable(SettingsDestination.About) {
             AboutScreen(onClickBack = ::goBack)
@@ -164,6 +169,7 @@ object SettingsDestination {
     const val Subtype = "subtype/"
     const val Layouts = "layouts"
     const val Dictionaries = "dictionaries"
+    const val Sovereign = "sovereign" // SovereignBoard:
     val navTarget = MutableStateFlow(Settings)
 
     private val navScope = CoroutineScope(Dispatchers.Default)

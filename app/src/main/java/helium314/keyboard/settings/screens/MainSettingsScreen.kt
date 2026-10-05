@@ -43,6 +43,7 @@ fun MainSettingsScreen(
     onClickLayouts: () -> Unit,
     onClickDictionaries: () -> Unit,
     onClickBack: () -> Unit,
+    onClickSovereign: () -> Unit = {}, // SovereignBoard:
 ) {
     SearchSettingsScreen(
         onClickBack = onClickBack,
@@ -54,6 +55,13 @@ fun MainSettingsScreen(
             Column(
                 Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
             ) {
+                // SovereignBoard: dictation server settings
+                Preference(
+                    name = "SovereignBoard",
+                    description = "Dictation server, access token, microphone",
+                    onClick = onClickSovereign,
+                    icon = R.drawable.sym_keyboard_voice_rounded
+                ) { NextScreenIcon() }
                 Preference(
                     name = stringResource(R.string.language_and_layouts_title),
                     description = enabledSubtypes.joinToString(", ") { it.displayName() },

@@ -91,6 +91,7 @@ import helium314.keyboard.latin.utils.SubtypeSettings;
 import helium314.keyboard.latin.utils.SubtypeState;
 import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
+import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import kotlin.Unit;
 
 import java.io.FileDescriptor;
@@ -144,6 +145,7 @@ public class LatinIME extends InputMethodService implements
     private SuggestionStripView mSuggestionStripView;
 
     private RichInputMethodManager mRichImm;
+    private DictationManager mDictationManager; // SovereignBoard:
     final KeyboardSwitcher mKeyboardSwitcher;
     private final SubtypeState mSubtypeState = new SubtypeState((InputMethodSubtype subtype) -> { switchToSubtype(subtype); return Unit.INSTANCE; });
     private final StatsUtilsManager mStatsUtilsManager;
@@ -705,6 +707,7 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onDestroy() {
+        if (mDictationManager != null) mDictationManager.abort(); // SovereignBoard:
         mClipboardHistoryManager.onDestroy();
         mDictionaryFacilitator.closeDictionaries();
         mSettings.onDestroy();
@@ -1429,7 +1432,9 @@ public class LatinIME extends InputMethodService implements
     // completely replace #onCodeInput.
     public void onEvent(@NonNull final Event event) {
         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
-            mRichImm.switchToShortcutIme(this);
+            // SovereignBoard: mic key drives built-in server dictation instead of switching IME
+            if (mDictationManager == null) mDictationManager = new DictationManager(this);
+            mDictationManager.onTap();
         }
         final InputTransaction completeInputTransaction =
                 mInputLogic.onCodeInput(mSettings.getCurrent(), event,

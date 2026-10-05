@@ -1,0 +1,189 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// SovereignBoard: ported from florisboard-tx (feat/dictate). Same protocol: one chunked POST to
+// <server>/v1/dictate/stream, 16 kHz mono PCM16, Bearer token, X-Dictate-Words, reply {"text": ...}.
+package helium314.keyboard.tx
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+/** A dictation failure with a message fit to show the user in a toast. */
+class DictationException(val userMessage: String) : Exception(userMessage)
+
+/** Turns captured speech into text ready to be committed to the editor. */
+interface Transcriber {
+    /**
+     * Captures audio until [stillRecording] returns false, then returns the finished text, or null
+     * if nothing usable was said. Throws [DictationException] with a user-facing message on failure.
+     */
+    suspend fun transcribe(stillRecording: () -> Boolean): String?
+}
+
+/**
+ * Records from the microphone and streams the audio, as it is recorded, to the user's own
+ * dictation server. Audio is held in memory only and never written to storage.
+ */
+class ServerTranscriber(context: Context) : Transcriber {
+    private val appContext = context.applicationContext
+
+    override suspend fun transcribe(stillRecording: () -> Boolean): String? {
+        val settings = DictationSettings(appContext)
+        val server = settings.serverUrl
+        val token = settings.token
+        val words = settings.wordList
+        if (server.isBlank() || token.isBlank()) throw DictationException(DictationMessages.NOT_SET_UP)
+        if (!server.startsWith("https://")) throw DictationException(DictationMessages.NOT_HTTPS)
+        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            throw DictationException(DictationMessages.NO_MICROPHONE)
+        }
+
+        return withContext(Dispatchers.IO) {
+            coroutineScope {
+                // Recording never waits on the network: chunks queue here while the connection
+                // is still being set up, and the uploader drains them as fast as it can.
+                val chunks = Channel<ByteArray>(Channel.UNLIMITED)
+                val upload = async { stream(server, token, words, chunks) }
+                val recorded = try {
+                    record(stillRecording) { chunks.trySend(it) }
+                } finally {
+                    chunks.close()
+                }
+                if (recorded < SAMPLE_RATE * BYTES_PER_SAMPLE * MIN_SECONDS_TENTHS / 10) {
+                    upload.cancel()
+                    return@coroutineScope null
+                }
+                upload.await()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission") // checked in transcribe()
+    private suspend fun record(stillRecording: () -> Boolean, onChunk: (ByteArray) -> Unit): Int {
+        val minBuf = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+        )
+        // ~100 ms per read: small enough that the server hears speech almost as it is spoken.
+        val bufSize = maxOf(minBuf, SAMPLE_RATE * BYTES_PER_SAMPLE / 10)
+        val recorder = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize,
+        )
+        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder.release()
+            throw DictationException(DictationMessages.MICROPHONE_BUSY)
+        }
+        val chunk = ByteArray(SAMPLE_RATE * BYTES_PER_SAMPLE / 10)
+        var total = 0
+        val ctx = currentCoroutineContext()
+        try {
+            recorder.startRecording()
+            while (stillRecording()) {
+                ctx.ensureActive()
+                val n = recorder.read(chunk, 0, chunk.size)
+                if (n > 0) {
+                    total += n
+                    onChunk(chunk.copyOf(n))
+                }
+            }
+        } finally {
+            // Microphone closed the moment recording ends, whatever happens next.
+            runCatching { recorder.stop() }
+            recorder.release()
+        }
+        return total
+    }
+
+    private suspend fun stream(
+        server: String,
+        token: String,
+        words: List<String>,
+        chunks: ReceiveChannel<ByteArray>,
+    ): String? {
+        val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setChunkedStreamingMode(0)
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            useCaches = false
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "application/octet-stream")
+            if (words.isNotEmpty()) {
+                setRequestProperty("X-Dictate-Words", URLEncoder.encode(words.joinToString("\n"), "UTF-8"))
+            }
+        }
+        // A cancelled dictation must drop the connection at once, even mid-write.
+        currentCoroutineContext()[Job]?.invokeOnCompletion { cause -> if (cause != null) conn.disconnect() }
+        try {
+            conn.outputStream.use { out ->
+                for (piece in chunks) {
+                    out.write(piece)
+                    out.flush()
+                }
+            }
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(DictationMessages.BAD_TOKEN)
+            if (code !in 200..299) throw DictationException(DictationMessages.SERVER)
+            val json = conn.inputStream.bufferedReader().use { it.readText() }
+            val text = JSONObject(json).optString("text").trim()
+            return if (text.isEmpty()) null else "$text "
+        } catch (e: DictationException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            // The server may have refused before we finished sending (a bad token, say).
+            val code = runCatching { conn.responseCode }.getOrNull()
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(DictationMessages.BAD_TOKEN)
+            throw DictationException(DictationMessages.NETWORK)
+        } catch (e: Exception) {
+            throw DictationException(DictationMessages.NETWORK)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    companion object {
+        private const val SAMPLE_RATE = 16_000
+        private const val BYTES_PER_SAMPLE = 2
+        /** Clips shorter than this (in tenths of a second) are treated as accidental presses. */
+        private const val MIN_SECONDS_TENTHS = 3
+        /** Short on purpose: the server normally answers well under a second after release. */
+        private const val CONNECT_TIMEOUT_MS = 5_000
+        private const val READ_TIMEOUT_MS = 8_000
+    }
+}
+
+/** User-facing messages, English only for now. */
+object DictationMessages {
+    const val NOT_SET_UP = "Dictation isn't set up yet. Add the access token in SovereignBoard settings."
+    const val NOT_HTTPS = "The dictation server address must start with https://"
+    const val NO_MICROPHONE = "Microphone permission is needed. Grant it in SovereignBoard settings."
+    const val MICROPHONE_BUSY = "The microphone is busy in another app."
+    const val BAD_TOKEN = "The dictation server refused the access token."
+    const val SERVER = "The dictation server had a problem. Try again."
+    const val NETWORK = "Couldn't reach the dictation server. Check your connection."
+    const val CANCELLED = "Dictation cancelled."
+}
