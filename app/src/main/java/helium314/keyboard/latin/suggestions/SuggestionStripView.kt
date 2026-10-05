@@ -363,6 +363,13 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     override fun onLongClick(view: View): Boolean {
+        // SovereignBoard: long-press on the mic (pinned or in the toolbar) takes the last dictation out,
+        // instead of pinning / unpinning or a custom long-press code
+        if (view.tag == ToolbarKey.VOICE) {
+            AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
+            listener.onCodeInput(KeyCode.DICTATION_UNDO, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false)
+            return true
+        }
         if (view.tag is ToolbarKey) {
             onLongClickToolbarKey(view)
             return true

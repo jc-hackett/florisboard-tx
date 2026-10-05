@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // SovereignBoard: ported from florisboard-tx (feat/dictate) ime/ai/AiCleanup.kt. Same server call,
-// same undo window, same messages; HeliBoard-specific bits are the editor access and composing check.
+// same messages; HeliBoard-specific bits are the editor access and composing check.
 package helium314.keyboard.tx
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import helium314.keyboard.latin.LatinIME
@@ -21,13 +20,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import kotlin.math.min
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
  * The toolbar's ✨ "AI cleanup" key: proofreads the selected text, or the whole field if nothing
- * is selected, through the user's own server (POST /v1/tidy). Tapping again within a minute, while
- * the cleaned text is untouched, puts the original back.
+ * is selected, through the user's own server (POST /v1/tidy). After a cleanup the key turns into an
+ * undo key (see [SovereignUndo]): tapping it puts the original back. Typing anything, moving the
+ * cursor, switching field or hiding the keyboard ends that offer.
  *
  * Also "auto-sparkle": after a space following . ? ! : ; … — or –, the paragraph just ended is
  * cleaned in the background ([cleanSentenceJustEnded]). Off with the switch in SovereignBoard settings.
@@ -39,19 +40,15 @@ class AiCleanup private constructor(context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** The last cleanup, for tap-again-to-undo: what we wrote and what it replaced. */
-    private data class Done(val cleaned: String, val original: String, val at: Long)
-    private var lastDone: Done? = null
-
     fun run(ime: LatinIME) {
         if (_busy.value) return
+        val ic = ime.currentInputConnection ?: return
+        if (SovereignUndo.cleanup.offered.value) return undoLastCleanup(ime, ic)
         if (isPassword(ime)) return toast("AI cleanup doesn't touch password fields")
         val settings = DictationSettings(appContext)
         if (settings.serverUrl.isBlank() || settings.token.isBlank()) {
             return toast("AI cleanup: add the server address and token in Settings, SovereignBoard")
         }
-        val ic = ime.currentInputConnection ?: return
-        if (undoIfJustCleaned(ime, ic)) return
         val selected = ic.getSelectedText(0)?.toString().orEmpty()
         val before: String
         val after: String
@@ -90,8 +87,10 @@ class AiCleanup private constructor(context: Context) {
                 if (selected.isEmpty()) ic2.deleteSurroundingText(before.length, after.length)
                 ic2.commitText(cleaned, 1)
                 ic2.endBatchEdit()
-                resync(ime, ic2)
-                lastDone = Done(cleaned, original, System.currentTimeMillis())
+                val now = resync(ime, ic2)
+                if (now != null && now.selStart >= cleaned.length) {
+                    SovereignUndo.cleanup.offer(CleanupDone(now.selStart - cleaned.length, cleaned, original), now.selStart, now.selEnd)
+                }
                 toast("Cleaned up. Tap again to undo.")
             } catch (e: Exception) {
                 toast("AI cleanup: ${e.message ?: "couldn't reach the server."}")
@@ -113,7 +112,7 @@ class AiCleanup private constructor(context: Context) {
         if (isPassword(ime)) return
         if (settings.serverUrl.isBlank() || settings.token.isBlank()) return
         val ic = ime.currentInputConnection ?: return
-        val snap = snapshot(ic) ?: return
+        val snap = SovereignUndo.snapshot(ic) ?: return
         val full = snap.text
         val cursor = snap.selStart
         if (cursor < 3 || cursor > full.length || full[cursor - 1] != ' ' || full[cursor - 2] !in SEGMENT_ENDS) return
@@ -146,7 +145,7 @@ class AiCleanup private constructor(context: Context) {
             }
             if (ime.sovereignIsComposingWord()) return@launch toast("Auto-sparkle skipped: you were still typing")
             val ic2 = ime.currentInputConnection ?: return@launch
-            val now = snapshot(ic2) ?: return@launch
+            val now = SovereignUndo.snapshot(ic2) ?: return@launch
             val text = now.text
             if (text.length < end || text.substring(start, end) != sentence) {
                 return@launch toast("Auto-sparkle skipped: that sentence changed")
@@ -160,25 +159,11 @@ class AiCleanup private constructor(context: Context) {
             ic2.commitText(cleaned, 1)
             ic2.setSelection(now.selStart + delta, now.selEnd + delta)
             ic2.endBatchEdit()
-            resync(ime, ic2)
+            val after = resync(ime, ic2)
+            if (after != null) {
+                SovereignUndo.cleanup.offer(CleanupDone(start, cleaned, sentence), after.selStart, after.selEnd)
+            }
         }
-    }
-
-    /** The whole box and the cursor, read whichever way the app allows. */
-    private data class Snapshot(val text: String, val selStart: Int, val selEnd: Int)
-
-    private fun snapshot(ic: InputConnection): Snapshot? {
-        // 1. The standard way: the app hands over its whole text and cursor.
-        val et = runCatching { ic.getExtractedText(ExtractedTextRequest(), 0) }.getOrNull()
-        if (et?.text != null && et.startOffset == 0 && et.selectionStart >= 0) {
-            return Snapshot(et.text.toString(), et.selectionStart, et.selectionEnd)
-        }
-        // 2. Some apps (WhatsApp among them) don't; rebuild it from the text around the cursor.
-        val before = ic.getTextBeforeCursor(MAX_CHARS, 0)?.toString() ?: return null
-        if (before.length >= MAX_CHARS) return null // box longer than we can see: positions unknown
-        val selected = ic.getSelectedText(0)?.toString().orEmpty()
-        val after = ic.getTextAfterCursor(MAX_CHARS, 0)?.toString().orEmpty()
-        return Snapshot(before + selected + after, before.length, before.length + selected.length)
     }
 
     private fun request(server: String, token: String, text: String): String? {
@@ -216,26 +201,33 @@ class AiCleanup private constructor(context: Context) {
     }.getOrDefault("")
 
     /** Let HeliBoard re-read the box after we changed it behind its back (its text cache would be stale). */
-    private fun resync(ime: LatinIME, ic: InputConnection) {
-        val now = snapshot(ic) ?: return
+    private fun resync(ime: LatinIME, ic: InputConnection): EditorSnapshot? {
+        val now = SovereignUndo.snapshot(ic) ?: return null
         ime.sovereignReloadAfterExternalEdit(now.selStart, now.selEnd)
+        return now
     }
 
-    /** If the text just before the cursor is exactly what the last cleanup wrote, restore it. */
-    private fun undoIfJustCleaned(ime: LatinIME, ic: InputConnection): Boolean {
-        val done = lastDone ?: return false
-        lastDone = null
-        if (System.currentTimeMillis() - done.at > UNDO_WINDOW_MS) return false
-        val before = ic.getTextBeforeCursor(done.cleaned.length, 0)?.toString() ?: return false
-        if (before != done.cleaned) return false
+    /**
+     * The ✨ key in its undo state: put the original back, if the cleaned text is still exactly where
+     * we wrote it. The cursor keeps its place relative to the text around it.
+     */
+    private fun undoLastCleanup(ime: LatinIME, ic: InputConnection) {
+        val done = SovereignUndo.cleanup.take() ?: return
+        val end = done.start + done.cleaned.length
+        val now = SovereignUndo.snapshot(ic)
+        if (now == null || now.text.length < end || now.text.substring(done.start, end) != done.cleaned) {
+            return toast("Nothing to undo")
+        }
+        val delta = done.original.length - done.cleaned.length
+        fun moved(pos: Int) = if (pos >= end) pos + delta else min(pos, done.start + done.original.length)
         ic.beginBatchEdit()
         ic.finishComposingText()
-        ic.deleteSurroundingText(done.cleaned.length, 0)
+        ic.setSelection(done.start, end)
         ic.commitText(done.original, 1)
+        ic.setSelection(moved(now.selStart), moved(now.selEnd))
         ic.endBatchEdit()
         toast("Original put back.")
         resync(ime, ic)
-        return true
     }
 
     private fun isPassword(ime: LatinIME): Boolean =
@@ -253,7 +245,6 @@ class AiCleanup private constructor(context: Context) {
         /** Marks that end a stretch worth cleaning when followed by a space (commas left out on
          *  purpose: half-sentences clean badly and would use up the per-minute limit). */
         private val SEGMENT_ENDS = charArrayOf('.', '?', '!', ':', ';', '…', '—', '–')
-        private const val UNDO_WINDOW_MS = 60_000L
 
         @JvmStatic
         fun isSegmentEnd(c: Char): Boolean = c in SEGMENT_ENDS

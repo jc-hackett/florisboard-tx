@@ -125,6 +125,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
                 return
             }
             KeyCode.AI_CLEANUP -> return latinIME.sovereignAiCleanup() // SovereignBoard: the ✨ toolbar key
+            KeyCode.DICTATION_UNDO -> return latinIME.sovereignUndoDictation() // SovereignBoard: long-press on the mic
             KeyCode.BACKGROUND_GATHERING_TEMP_OFF -> {
                 GestureDataGatheringSettings.tempDisableBackgroundGathering(latinIME.prefs())
                 BackgroundGatheringCache.clear()

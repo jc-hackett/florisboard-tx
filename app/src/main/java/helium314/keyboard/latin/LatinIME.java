@@ -29,6 +29,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection; // SovereignBoard:
 import android.view.inputmethod.InlineSuggestion;
 import android.view.inputmethod.InlineSuggestionsRequest;
 import android.view.inputmethod.InlineSuggestionsResponse;
@@ -93,6 +94,8 @@ import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
 import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 import helium314.keyboard.tx.DictationManager; // SovereignBoard:
+import helium314.keyboard.tx.EditorSnapshot; // SovereignBoard:
+import helium314.keyboard.tx.SovereignUndo; // SovereignBoard:
 import kotlin.Unit;
 
 import java.io.FileDescriptor;
@@ -857,6 +860,7 @@ public class LatinIME extends InputMethodService implements
 
     private void onStartInputInternal(EditorInfo editorInfo, boolean restarting) {
         super.onStartInput(editorInfo, restarting);
+        if (!restarting) SovereignUndo.forgetAll(); // SovereignBoard: another field, no undo on offer
 
         RichInputMethodSubtype subtypeForApp = editorInfo == null
             ? null :
@@ -1057,6 +1061,7 @@ public class LatinIME extends InputMethodService implements
     void onFinishInputViewInternal(final boolean finishingInput) {
         super.onFinishInputView(finishingInput);
         Log.i(TAG, "onFinishInputView");
+        SovereignUndo.forgetAll(); // SovereignBoard: keyboard hidden, no undo on offer
         cleanupInternalStateForFinishInput();
     }
 
@@ -1078,6 +1083,8 @@ public class LatinIME extends InputMethodService implements
                                   final int composingSpanStart, final int composingSpanEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 composingSpanStart, composingSpanEnd);
+        // SovereignBoard: typing or moving the cursor withdraws the ✨ / dictation undo
+        SovereignUndo.onUpdateSelection(getCurrentInputConnection(), newSelStart, newSelEnd);
         if (DebugFlags.DEBUG_ENABLED) {
             Log.i(TAG, "onUpdateSelection: oss=" + oldSelStart + ", ose=" + oldSelEnd
                     + ", nss=" + newSelStart + ", nse=" + newSelEnd
@@ -1433,6 +1440,15 @@ public class LatinIME extends InputMethodService implements
     public void sovereignAiCleanup() {
         mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
         AiCleanup.get(this).run(this);
+    }
+
+    // SovereignBoard: long-press on the mic takes the last dictation back out.
+    public void sovereignUndoDictation() {
+        if (mDictationManager == null) mDictationManager = new DictationManager(this);
+        if (!mDictationManager.undoLastDictation()) return;
+        final InputConnection ic = getCurrentInputConnection();
+        final EditorSnapshot now = ic == null ? null : SovereignUndo.INSTANCE.snapshot(ic);
+        if (now != null) sovereignReloadAfterExternalEdit(now.getSelStart(), now.getSelEnd());
     }
 
     // SovereignBoard: auto-sparkle waits until no word is being composed.

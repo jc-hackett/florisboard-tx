@@ -38,6 +38,9 @@ enum class DictationState { IDLE, RECORDING, WORKING, ERROR }
  *   types nothing and frees the key at once.
  *
  * A latched recording also ends itself after [MAX_SESSION_MS].
+ *
+ * A long-press on the mic takes the last dictation back out ([undoLastDictation]), as long as the
+ * user hasn't typed or moved the cursor since (see [SovereignUndo]).
  */
 class DictationManager(private val ime: InputMethodService) {
     private val appContext = ime.applicationContext
@@ -133,6 +136,7 @@ class DictationManager(private val ime: InputMethodService) {
                         // Keep a word that was being composed instead of replacing it.
                         ic.finishComposingText()
                         ic.commitText(text, 1)
+                        SovereignUndo.snapshot(ic)?.let { SovereignUndo.dictation.offer(text, it.selStart, it.selEnd) }
                         copyToClipboard(text)
                     }
                 }
@@ -159,6 +163,26 @@ class DictationManager(private val ime: InputMethodService) {
             }
         }
         runCatching { clipboard.setPrimaryClip(clip) }
+    }
+
+    /**
+     * Long-press on the mic: removes exactly the text the last dictation typed in, if it is still
+     * right before the cursor, unchanged, with nothing selected. Returns true if it did.
+     */
+    fun undoLastDictation(): Boolean {
+        val text = SovereignUndo.dictation.take()
+        val ic = ime.currentInputConnection
+        if (text == null || ic == null || isBusy) return false.also { toast("Nothing to undo") }
+        val selected = ic.getSelectedText(0)
+        if (!selected.isNullOrEmpty() || ic.getTextBeforeCursor(text.length, 0)?.toString() != text) {
+            toast("Nothing to undo")
+            return false
+        }
+        ic.beginBatchEdit()
+        ic.finishComposingText()
+        ic.deleteSurroundingText(text.length, 0)
+        ic.endBatchEdit()
+        return true
     }
 
     /** Closes the microphone and lets the in-flight transcription finish. */

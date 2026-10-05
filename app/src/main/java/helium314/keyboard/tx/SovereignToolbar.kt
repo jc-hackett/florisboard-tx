@@ -3,6 +3,8 @@
 package helium314.keyboard.tx
 
 import android.content.SharedPreferences
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
@@ -30,11 +32,14 @@ import kotlin.math.min
 object SovereignToolbar {
     private const val GREEN = 0xFF34C759.toInt() // like Android's mic-in-use indicator
     private const val GREY = 0xFF9E9E9E.toInt()
+    private const val UNDO_RED = SovereignTheme.ENTER // #D81B3C, the theme's accent / Enter colour
+    private var sparkleDescription: CharSequence? = null
     private const val PREF_MIGRATED = "sovereign_ai_cleanup_toolbar_v1"
     private const val PREF_PINNED_MIGRATED = "sovereign_pinned_mic_sparkle_v1"
     private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
     private const val PREF_STRIP_CLEANUP_MIGRATED = "sovereign_strip_cleanup_v1"
     private const val PREF_CLIP_RETENTION_MIGRATED = "sovereign_clip_retention_60_v1"
+    private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -44,12 +49,15 @@ object SovereignToolbar {
 
     /**
      * Keeps the mic and ✨ keys in [groups] showing what they are doing: a green dot on the mic
-     * while recording, a grey dot while waiting for the server, a grey dot on ✨ while it works.
+     * while recording, a grey dot while waiting for the server, a grey dot on ✨ while it works, and
+     * ✨ turned into a white undo arrow on red while a cleanup can be undone.
      * Returns the job to cancel when the views go away.
      */
     fun observe(groups: List<ViewGroup>): Job =
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
-            combine(DictationManager.current, AiCleanup.busy) { mic, busy -> mic to busy }.collect { (mic, busy) ->
+            combine(DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered) { mic, busy, undo ->
+                Triple(mic, busy, undo)
+            }.collect { (mic, busy, undo) ->
                 val micDot = when (mic) {
                     DictationState.RECORDING -> GREEN
                     DictationState.WORKING -> GREY
@@ -60,7 +68,8 @@ object SovereignToolbar {
                         decorate(it, ToolbarKey.VOICE, micDot, strong = mic == DictationState.RECORDING)
                     }
                     group.findViewWithTag<ImageButton>(ToolbarKey.AI_CLEANUP)?.let {
-                        decorate(it, ToolbarKey.AI_CLEANUP, if (busy) GREY else null, strong = busy)
+                        if (undo && !busy) decorateUndo(it)
+                        else decorate(it, ToolbarKey.AI_CLEANUP, if (busy) GREY else null, strong = busy)
                     }
                 }
             }
@@ -72,6 +81,17 @@ object SovereignToolbar {
         colors.setColor(button, ColorType.TOOL_BAR_KEY)
         if (dot != null) button.drawable?.let { button.setImageDrawable(DotDrawable(it, dot)) }
         button.background = BadgeDrawable(badgeColor(colors, strong), badgeColor(colors, true))
+        if (key == ToolbarKey.AI_CLEANUP) button.contentDescription = sparkleDescription ?: button.contentDescription
+    }
+
+    /** ✨ in its undo state: HeliBoard's undo arrow in white on a red (Enter-key colour) badge. */
+    private fun decorateUndo(button: ImageButton) {
+        if (sparkleDescription == null) sparkleDescription = button.contentDescription
+        val icon = KeyboardIconsSet.instance.getNewDrawable(ToolbarKey.UNDO.name, button.context)?.mutate()
+        icon?.setTintList(ColorStateList.valueOf(Color.WHITE))
+        button.setImageDrawable(icon)
+        button.background = BadgeDrawable(UNDO_RED, brightenOrDarken(UNDO_RED, true))
+        button.contentDescription = "Undo cleanup"
     }
 
     /**
@@ -134,6 +154,24 @@ object SovereignToolbar {
                 putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
             }
             putBoolean(PREF_STRIP_CLEANUP_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: take clipboard history out of the expanded toolbar
+     * (it stays pinned in the strip, next to the mic). Fresh installs get this from the default list.
+     */
+    fun migrateToolbarNoClipboard(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED, false)) return
+        prefs.edit {
+            prefs.getString(Settings.PREF_TOOLBAR_KEYS, null)?.let { saved ->
+                val clip = ToolbarKey.CLIPBOARD.name + Separators.KV
+                val trimmed = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.joinToString(Separators.ENTRY) { e ->
+                    if (e.startsWith(clip)) clip + "false" else e
+                }
+                putString(Settings.PREF_TOOLBAR_KEYS, trimmed)
+            }
+            putBoolean(PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED, true)
         }
     }
 
