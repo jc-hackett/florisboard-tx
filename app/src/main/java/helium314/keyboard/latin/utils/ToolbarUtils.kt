@@ -140,9 +140,9 @@ val defaultToolbarPref by lazy {
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }
 }
 
-val defaultPinnedToolbarPref = entries.filterNot { it == CLOSE_HISTORY }.joinToString(Separators.ENTRY) {
-    it.name + Separators.KV + false
-}
+// SovereignBoard: mic then ✨ pinned in the suggestion strip, next to the word suggestions
+val defaultPinnedToolbarPref = (listOf(VOICE, AI_CLEANUP) + entries.filterNot { it == CLOSE_HISTORY || it == VOICE || it == AI_CLEANUP })
+    .joinToString(Separators.ENTRY) { it.name + Separators.KV + (it == VOICE || it == AI_CLEANUP) }
 
 val defaultClipboardToolbarPref by lazy {
     val default = listOf(CLEAR_CLIPBOARD, UP, DOWN, LEFT, RIGHT, UNDO, CUT, COPY, PASTE, SELECT_WORD, CLOSE_HISTORY)
