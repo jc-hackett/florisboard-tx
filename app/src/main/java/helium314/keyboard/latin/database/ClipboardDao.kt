@@ -71,13 +71,20 @@ class ClipboardDao private constructor(private val db: Database) {
         insertNewEntry(timestamp, pinned, text, null, null, null)
     }
 
-    fun addClipUri(timestamp: Long, pinned: Boolean, uri: Uri, description: ClipDescription, context: Context) = synchronized(this) {
+    // SovereignBoard: maxBytes (if >= 0) is enforced while copying, for clips whose size could not be queried
+    fun addClipUri(timestamp: Long, pinned: Boolean, uri: Uri, description: ClipDescription, context: Context, maxBytes: Long = -1) = synchronized(this) {
         clearOldClips()
         val extension = if (description.mimeTypeCount == 0) ""
             else ".${MimeTypeMap.getSingleton().getExtensionFromMimeType(description.getMimeType(0))}"
         val tempFile = File(context.filesDir, "temp_clip")
         tempFile.delete()
-        runCatching { FileUtils.copyContentUriToNewFile(uri, context, tempFile) }.onFailure { return@synchronized }
+        // SovereignBoard: copy right away (we are called from the clipboard-change callback, while the URI grant
+        //  is valid), stopping if the clip turns out larger than the limit; log why a clip is dropped
+        runCatching { copyLimited(uri, context, tempFile, maxBytes) }.onFailure {
+            Log.w(TAG, "not saving clip from $uri", it)
+            tempFile.delete()
+            return@synchronized
+        }
 
         // we set the file name to the sha256 of the content to have virtually unique names and an easy way to find duplicates
         val sha256 = ChecksumCalculator.checksum(tempFile)
@@ -94,6 +101,25 @@ class ClipboardDao private constructor(private val db: Database) {
         // we could try getting a thumbnail using context.contentResolver.loadThumbnail(uri, Size(a, b), null)
         // but currently we don't cache them anyway, so no use for that
         insertNewEntry(timestamp, pinned, description.label?.toString(), file.name, description.getMimeTypes(), context)
+    }
+
+    // SovereignBoard: like FileUtils.copyContentUriToNewFile, but with an optional size cap
+    private fun copyLimited(uri: Uri, context: Context, outfile: File, maxBytes: Long) {
+        if (maxBytes < 0) return FileUtils.copyContentUriToNewFile(uri, context, outfile)
+        val input = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("can't open stream")
+        input.use { ins ->
+            outfile.outputStream().use { out ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val read = ins.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > maxBytes) throw java.io.IOException("clip larger than limit of $maxBytes bytes")
+                    out.write(buffer, 0, read)
+                }
+            }
+        }
     }
 
     // keep pinned and the first non-pinned, others can be deleted

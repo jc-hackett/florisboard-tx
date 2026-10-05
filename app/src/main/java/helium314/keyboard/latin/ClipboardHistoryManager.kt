@@ -82,8 +82,10 @@ class ClipboardHistoryManager(
             val content = clipItem.coerceToText(latinIME)
             if (TextUtils.isEmpty(content)) return
             clipboardDao?.addClip(timeStamp, false, content.toString())
-        } else if (maySaveFromUri(clipItem.uri, latinIME)) {
-            clipboardDao?.addClipUri(timeStamp, false, clipItem.uri, description, latinIME)
+        } else {
+            // SovereignBoard: also save clips whose size can't be queried (copy with the limit enforced)
+            val maxBytes = maySaveFromUri(clipItem.uri, latinIME) ?: return
+            clipboardDao?.addClipUri(timeStamp, false, clipItem.uri, description, latinIME, maxBytes)
         }
     }
 
@@ -269,19 +271,30 @@ class ClipboardHistoryManager(
 
         const val RECENT_TIME_MILLIS = 3 * 60 * 1000L // 3 minutes (for clipboard suggestions)
 
-        private fun maySaveFromUri(uri: Uri?, context: Context): Boolean {
+        /**
+         * SovereignBoard: null = don't save. Otherwise the size cap to enforce while copying: -1 if the size
+         * was checked already, the limit in bytes if the size query failed or returned nothing. Previously
+         * a failed query (often SecurityException "Permission Denial" for providers that don't allow it,
+         * or a provider without a SIZE row) dropped the clip, even when the stream itself could be read.
+         */
+        private fun maySaveFromUri(uri: Uri?, context: Context): Long? {
             val maxSize = context.prefs().getInt(Settings.PREF_CLIPBOARD_FILES_SIZE_LIMIT, Defaults.PREF_CLIPBOARD_FILES_SIZE_LIMIT)
             val saveUriData = context.prefs().getBoolean(Settings.PREF_CLIPBOARD_USE_FILES, Defaults.PREF_CLIPBOARD_USE_FILES)
-            if (uri == null || !saveUriData) return false
+            if (uri == null || !saveUriData) return null
+            val maxBytes = maxSize * 1000000L // maxSize is megabytes
             try {
                 context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null).use {
-                    if (it?.moveToFirst() != true) return false
+                    if (it == null || !it.moveToFirst() || it.isNull(0)) {
+                        Log.i(TAG, "no clip size from $uri, copying with limit")
+                        return maxBytes
+                    }
                     val size = it.getLong(0)
-                    return size <= maxSize * 1000000 // maxSize is megabytes
+                    if (size > maxBytes) Log.i(TAG, "clip from $uri too large: $size bytes")
+                    return if (size <= maxBytes) -1L else null
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "error checking clip size", e) // happens with SecurityException: Permission Denial
-                return false
+                Log.w(TAG, "error checking clip size, copying with limit", e) // happens with SecurityException: Permission Denial
+                return maxBytes
             }
         }
     }

@@ -34,6 +34,7 @@ object SovereignToolbar {
     private const val PREF_PINNED_MIGRATED = "sovereign_pinned_mic_sparkle_v1"
     private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
     private const val PREF_STRIP_CLEANUP_MIGRATED = "sovereign_strip_cleanup_v1"
+    private const val PREF_CLIP_RETENTION_MIGRATED = "sovereign_clip_retention_60_v1"
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -133,6 +134,19 @@ object SovereignToolbar {
                 putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
             }
             putBoolean(PREF_STRIP_CLEANUP_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: keep clipboard history for 60 minutes instead of 10, but
+     * only if the old default of 10 is still set (a value the user picked is left alone).
+     */
+    fun migrateClipboardRetention(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_CLIP_RETENTION_MIGRATED, false)) return
+        prefs.edit {
+            if (prefs.getInt(Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME, 10) == 10)
+                putInt(Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME, 60)
+            putBoolean(PREF_CLIP_RETENTION_MIGRATED, true)
         }
     }
 
