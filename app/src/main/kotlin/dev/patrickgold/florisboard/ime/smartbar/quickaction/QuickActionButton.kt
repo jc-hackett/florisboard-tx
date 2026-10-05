@@ -42,6 +42,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Icon
 import dev.patrickgold.florisboard.ime.ai.ButtonColors
 import dev.patrickgold.florisboard.ime.ai.DictationSettings
@@ -58,6 +63,22 @@ import org.florisboard.lib.snygg.SnyggSelector
 import org.florisboard.lib.snygg.ui.SnyggBox
 import org.florisboard.lib.snygg.ui.SnyggIcon
 import org.florisboard.lib.snygg.ui.SnyggText
+
+/**
+ * florisboard-tx default look for the mic and sparkle: a light pink round badge with a dark icon,
+ * the same pink as the shift/number keys. Deeper pink while recording or working.
+ */
+@Composable
+private fun PinkBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, strong: Boolean) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .size(34.dp)
+            .background(Color(if (strong) 0xFFF2B8C3 else 0xFFF9DCE2), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF3B1F25), modifier = Modifier.size(20.dp))
+    }
+}
 
 enum class QuickActionBarType {
     INTERACTIVE_BUTTON,
@@ -156,7 +177,7 @@ fun QuickActionButton(
                             if (micColor != null) {
                                 Icon(imageVector = micIcon, contentDescription = null, tint = micColor)
                             } else {
-                                SnyggIcon(imageVector = micIcon)
+                                PinkBadge(micIcon, strong = dictationState == DictationState.RECORDING)
                             }
                         }
                     }
@@ -173,7 +194,7 @@ fun QuickActionButton(
                             if (sparkleColor != null) {
                                 Icon(imageVector = sparkleIcon, contentDescription = null, tint = sparkleColor)
                             } else {
-                                SnyggIcon(imageVector = sparkleIcon)
+                                PinkBadge(sparkleIcon, strong = busy)
                             }
                         }
                     }

@@ -45,5 +45,5 @@ object ButtonColors {
     }
 
     fun label(name: String): String =
-        if (name == "theme") "Theme default" else name.replaceFirstChar { it.uppercaseChar() }
+        if (name == "theme") "Pink (default)" else name.replaceFirstChar { it.uppercaseChar() }
 }
