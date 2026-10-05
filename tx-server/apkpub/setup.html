@@ -61,7 +61,14 @@
     for (var i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(h); i++) { try { h = decodeURIComponent(h); } catch (e) { break; } }
     var tm = h.match(/dt_[A-Za-z0-9_-]{20,}/);
     var token = tm ? tm[0] : "";
-    var nm = h.match(/(?:^|[.&])n=([^&]+)/) || h.match(/dt_[A-Za-z0-9_-]{20,}\.([^&#]+)/);
+    // Newest shape: #k<hex>.Name - the token spelled in 0-9a-f only, which no app rewrites.
+    var km = h.match(/(?:^|[^0-9a-z])k([0-9a-f]{40,})(?:\.([A-Za-z]+))?/);
+    if (!token && km) {
+      var t = "";
+      for (var j = 0; j + 1 < km[1].length; j += 2) t += String.fromCharCode(parseInt(km[1].substr(j, 2), 16));
+      if (t.indexOf("dt_") === 0) token = t;
+    }
+    var nm = h.match(/(?:^|[.&])n=([^&]+)/) || h.match(/dt_[A-Za-z0-9_-]{20,}\.([^&#]+)/) || (km && km[2] ? [null, km[2]] : null);
     var name = nm ? nm[1] : "";
     if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up SovereignBoard";
     // Download name carries the release number, e.g. SovereignBoard-0.1.apk.
