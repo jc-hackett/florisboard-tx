@@ -33,6 +33,7 @@ object SovereignToolbar {
     private const val PREF_MIGRATED = "sovereign_ai_cleanup_toolbar_v1"
     private const val PREF_PINNED_MIGRATED = "sovereign_pinned_mic_sparkle_v1"
     private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
+    private const val PREF_NO_AUTO_TOOLBAR_MIGRATED = "sovereign_no_auto_show_toolbar_v1"
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -100,6 +101,20 @@ object SovereignToolbar {
                 putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
             }
             putBoolean(PREF_PINNED_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: switch off "auto show toolbar". With it on, an empty box
+     * (or no suggestions) swaps the strip for the expanded toolbar, which hides the pinned mic and ✨.
+     * Off, the strip with its pinned keys always shows; the toolbar is still one tap away on the caret.
+     * Fresh installs already default to off.
+     */
+    fun migrateNoAutoShowToolbar(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_NO_AUTO_TOOLBAR_MIGRATED, false)) return
+        prefs.edit {
+            putBoolean(Settings.PREF_AUTO_SHOW_TOOLBAR, false)
+            putBoolean(PREF_NO_AUTO_TOOLBAR_MIGRATED, true)
         }
     }
 

@@ -45,6 +45,7 @@ class App : Application() {
         SovereignToolbar.migrateToolbarPrefs(prefs()) // SovereignBoard: put the ✨ key next to the mic once
         SovereignToolbar.migratePinnedKeys(prefs()) // SovereignBoard: pin mic + ✨ in the suggestion strip once
         SovereignToolbar.migrateToolbarTrim(prefs()) // SovereignBoard: trim the expanded toolbar once
+        SovereignToolbar.migrateNoAutoShowToolbar(prefs()) // SovereignBoard: keep the strip (mic + ✨) up on an empty box once
         SovereignTheme.migrate(prefs()) // SovereignBoard: pink day theme once
         if (BuildConfig.DEBUG) // do this on every debug apk start because we may work on adding a new toolbar key
             upgradeToolbarPrefs(prefs())
