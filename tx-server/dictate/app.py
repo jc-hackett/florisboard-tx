@@ -213,7 +213,8 @@ def auth(request: Request) -> str:
     for known, name in _load_tokens().items():  # re-read each call so tokens can change live
         if hmac.compare_digest(known, digest):
             return name
-    log.info("status=rejected reason=bad_token")
+    # First 8 of the hash only: enough to tell which token a phone has, useless for guessing it.
+    log.info("status=rejected reason=bad_token hash8=%s len=%d prefix_ok=%s", digest[:8], len(header[7:].strip()), header[7:].strip().startswith("dt_"))
     raise HTTPException(401, "bad token")
 
 

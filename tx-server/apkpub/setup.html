@@ -55,12 +55,14 @@
 </main>
 <script>
   (function () {
-    // Link shapes: #dt_TOKEN.Name (current; nothing for apps to cut), or the older #n=Name&t=TOKEN.
-    var h = decodeURIComponent(location.hash.slice(1));
-    var token = "", name = "";
-    var m = h.match(/^(dt_[A-Za-z0-9_-]+)(?:\.(.+))?$/);
-    if (m) { token = m[1]; name = m[2] || ""; }
-    else { var p = new URLSearchParams(h); token = p.get("t") || ""; name = p.get("n") || ""; }
+    // Link shapes: #dt_TOKEN.Name (current) or #n=Name&t=TOKEN (older). Apps sometimes escape
+    // the link once or twice on the way in, so undo that, then just look for the token.
+    var h = location.hash.slice(1);
+    for (var i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(h); i++) { try { h = decodeURIComponent(h); } catch (e) { break; } }
+    var tm = h.match(/dt_[A-Za-z0-9_-]{20,}/);
+    var token = tm ? tm[0] : "";
+    var nm = h.match(/(?:^|[.&])n=([^&]+)/) || h.match(/dt_[A-Za-z0-9_-]{20,}\.([^&#]+)/);
+    var name = nm ? nm[1] : "";
     if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up SovereignBoard";
     // Download name carries the release number, e.g. SovereignBoard-0.1.apk.
     fetch("latest.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
