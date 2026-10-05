@@ -138,6 +138,14 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     )
                 }
                 Text(updateStatus, style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(
+                    onClick = {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/jc-hackett/florisboard-tx/commits/heliboard"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("What's new (on GitHub)") }
 
                 Text("Dictation", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
