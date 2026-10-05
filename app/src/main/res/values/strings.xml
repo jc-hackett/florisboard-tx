@@ -352,6 +352,8 @@
     <string name="clipboard" tools:keep="@string/clipboard">Clipboard</string>
     <string name="clear_clipboard" tools:keep="@string/clear_clipboard">Clear clipboard</string>
     <string name="voice" tools:keep="@string/voice">Voice input</string>
+    <!-- SovereignBoard: the sparkle toolbar key -->
+    <string name="ai_cleanup" tools:keep="@string/ai_cleanup" translatable="false">AI cleanup</string>
     <string name="numpad" tools:keep="@string/numpad" translatable="false">@string/layout_numpad</string>
     <string name="dpad" tools:keep="@string/dpad" translatable="false">@string/layout_dpad</string>
     <string name="settings" tools:keep="@string/settings">Settings</string>

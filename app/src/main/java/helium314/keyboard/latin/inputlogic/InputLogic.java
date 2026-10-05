@@ -72,6 +72,7 @@ import helium314.keyboard.latin.utils.StatsUtils;
 import helium314.keyboard.latin.utils.TextPlacement;
 import helium314.keyboard.latin.utils.TextRange;
 import helium314.keyboard.latin.utils.TimestampKt;
+import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -1267,6 +1268,16 @@ public final class InputLogic {
         }
 
         inputTransaction.requireShiftUpdate(InputTransaction.SHIFT_UPDATE_NOW);
+
+        // SovereignBoard: auto-sparkle. A space after . ? ! : ; … or a dash ends a stretch worth
+        // tidying; AiCleanup checks its own switch, the server settings and password fields.
+        if (Constants.CODE_SPACE == codePoint && !settingsValues.mIncognitoModeEnabled) {
+            final CharSequence lastTwo = mConnection.getTextBeforeCursor(2, 0);
+            if (lastTwo != null && lastTwo.length() == 2 && lastTwo.charAt(1) == Constants.CODE_SPACE
+                    && AiCleanup.isSegmentEnd(lastTwo.charAt(0))) {
+                AiCleanup.get(mLatinIME).cleanSentenceJustEnded(mLatinIME);
+            }
+        }
     }
 
     /**

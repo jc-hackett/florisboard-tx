@@ -37,8 +37,13 @@ class DictationManager(private val ime: InputMethodService) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val _state = MutableStateFlow(DictationState.IDLE)
+    // Shared with the toolbar (see SovereignToolbar), which shows a dot on the mic key.
+    private val _state = sharedState
     val state: StateFlow<DictationState> = _state.asStateFlow()
+
+    init {
+        _state.value = DictationState.IDLE
+    }
 
     var transcriber: Transcriber = ServerTranscriber(appContext)
 
@@ -147,6 +152,11 @@ class DictationManager(private val ime: InputMethodService) {
     }
 
     companion object {
+        private val sharedState = MutableStateFlow(DictationState.IDLE)
+
+        /** What dictation is doing right now, for whoever draws the mic key. */
+        val current: StateFlow<DictationState> = sharedState.asStateFlow()
+
         /** A press shorter than this latches; anything longer is treated as hold-to-talk. */
         const val TAP_THRESHOLD_MS = 300L
 

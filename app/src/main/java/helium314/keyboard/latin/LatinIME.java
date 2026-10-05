@@ -91,6 +91,7 @@ import helium314.keyboard.latin.utils.SubtypeSettings;
 import helium314.keyboard.latin.utils.SubtypeState;
 import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
+import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import kotlin.Unit;
 
@@ -1426,6 +1427,22 @@ public class LatinIME extends InputMethodService implements
     @Override
     public void onCodeInput(final int codePoint, final int x, final int y, final boolean isKeyRepeat) {
         mKeyboardActionListener.onCodeInput(codePoint, x, y, isKeyRepeat);
+    }
+
+    // SovereignBoard: the ✨ toolbar key. Finish the word being typed, then clean up via the server.
+    public void sovereignAiCleanup() {
+        mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
+        AiCleanup.get(this).run(this);
+    }
+
+    // SovereignBoard: auto-sparkle waits until no word is being composed.
+    public boolean sovereignIsComposingWord() {
+        return mInputLogic.getComposingLength() > 0;
+    }
+
+    // SovereignBoard: re-read the editor after AI cleanup changed text behind the input logic's back.
+    public void sovereignReloadAfterExternalEdit(final int selStart, final int selEnd) {
+        mInputLogic.mConnection.resetCachesUponCursorMoveAndReturnSuccess(selStart, selEnd, false);
     }
 
     // This method is public for testability of LatinIME, but also in the future it should

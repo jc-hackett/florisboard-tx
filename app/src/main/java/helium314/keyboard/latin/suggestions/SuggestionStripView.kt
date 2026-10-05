@@ -62,7 +62,9 @@ import kotlin.math.min
 import androidx.core.view.isGone
 import helium314.keyboard.latin.utils.onClickToolbarKey
 import helium314.keyboard.latin.utils.onLongClickToolbarKey
+import helium314.keyboard.tx.SovereignToolbar // SovereignBoard:
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job // SovereignBoard:
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -302,8 +304,19 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             suggestionsStrip.visibility = visibility
     }
 
+    // SovereignBoard: dots on the mic (recording / waiting) and ✨ (working) toolbar keys
+    private var sovereignIndicatorJob: Job? = null
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        sovereignIndicatorJob?.cancel()
+        sovereignIndicatorJob = SovereignToolbar.observe(listOf(toolbar, pinnedKeys)) // SovereignBoard:
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        sovereignIndicatorJob?.cancel() // SovereignBoard:
+        sovereignIndicatorJob = null // SovereignBoard:
         dismissMoreSuggestionsPanel()
     }
 

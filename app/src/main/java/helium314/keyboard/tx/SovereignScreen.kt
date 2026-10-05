@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,12 +28,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -48,6 +51,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var server by remember { mutableStateOf(settings.serverUrl) }
     var token by remember { mutableStateOf(settings.token) }
     var words by remember { mutableStateOf(settings.words) }
+    var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var micGranted by remember { mutableStateOf(hasMic(ctx)) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micGranted = granted || hasMic(ctx)
@@ -101,6 +105,22 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Save") }
+
+                Text("AI cleanup", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto-sparkle", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "After a space following . ? ! : ; … or a dash, tidy the paragraph you just finished. " +
+                                "The ✨ key in the toolbar tidies a selection or the whole box on demand.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = autoSparkle,
+                        onCheckedChange = { autoSparkle = it; settings.autoCleanupOnPeriod = it },
+                    )
+                }
 
                 Text("Microphone", style = MaterialTheme.typography.titleMedium)
                 Text(
