@@ -135,8 +135,8 @@ val toolbarKeyStrings = entries.associateWithTo(EnumMap(ToolbarKey::class.java))
 val defaultToolbarPref by lazy {
     // SovereignBoard: a short toolbar; mic and ✨ live pinned in the suggestion strip instead, and
     // redo, select, copy, paste and the cursor arrows are left out (clipboard history covers pasting,
-    // the spacebar moves the cursor)
-    val default = listOf(SETTINGS, CLIPBOARD, UNDO)
+    // the spacebar moves the cursor); clipboard history is pinned in the strip, so not here either
+    val default = listOf(SETTINGS, UNDO)
     val others = entries.filterNot { it in default || it == CLOSE_HISTORY }
     default.joinToString(Separators.ENTRY) { it.name + Separators.KV + true } + Separators.ENTRY +
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }
