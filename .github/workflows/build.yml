@@ -3,7 +3,7 @@ name: SovereignBoard H (HeliBoard edition)
 on:
   workflow_dispatch:
   push:
-    branches: [ heliboard ]
+    branches: [ heliboard, heliboard-next ] # heliboard-next: test builds that do not reach the phone
 
 jobs:
   build:
