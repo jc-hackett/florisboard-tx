@@ -133,8 +133,9 @@ enum class ToolbarMode {
 val toolbarKeyStrings = entries.associateWithTo(EnumMap(ToolbarKey::class.java)) { it.toString().lowercase(Locale.US) }
 
 val defaultToolbarPref by lazy {
-    // SovereignBoard: AI_CLEANUP (✨) right after the mic
-    val default = listOf(SETTINGS, VOICE, AI_CLEANUP, CLIPBOARD, UNDO, REDO, SELECT_WORD, COPY, PASTE, LEFT, RIGHT)
+    // SovereignBoard: a short toolbar; mic and ✨ live pinned in the suggestion strip instead, and
+    // redo, select, copy and paste are left out (clipboard history covers pasting)
+    val default = listOf(SETTINGS, CLIPBOARD, UNDO, LEFT, RIGHT)
     val others = entries.filterNot { it in default || it == CLOSE_HISTORY }
     default.joinToString(Separators.ENTRY) { it.name + Separators.KV + true } + Separators.ENTRY +
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }

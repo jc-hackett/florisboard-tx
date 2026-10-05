@@ -68,8 +68,9 @@
     <dimen name="config_key_popup_hint_letter_padding">2dp</dimen>
 
     <!-- Common suggestion strip configuration. -->
-    <integer name="config_suggestions_count_in_strip">3</integer>
-    <fraction name="config_center_suggestion_percentile">36%</fraction>
+    <!-- SovereignBoard: two word suggestions (mic and sparkle are pinned beside them), split evenly -->
+    <integer name="config_suggestions_count_in_strip">2</integer>
+    <fraction name="config_center_suggestion_percentile">50%</fraction>
     <integer name="config_delay_in_milliseconds_to_update_suggestions">100</integer>
 
     <!-- Common more suggestions configuration. -->

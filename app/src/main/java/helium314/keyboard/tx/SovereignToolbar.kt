@@ -32,6 +32,13 @@ object SovereignToolbar {
     private const val GREY = 0xFF9E9E9E.toInt()
     private const val PREF_MIGRATED = "sovereign_ai_cleanup_toolbar_v1"
     private const val PREF_PINNED_MIGRATED = "sovereign_pinned_mic_sparkle_v1"
+    private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
+
+    /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
+    private val TRIMMED = listOf(
+        ToolbarKey.VOICE, ToolbarKey.AI_CLEANUP, ToolbarKey.SELECT_ALL, ToolbarKey.SELECT_WORD,
+        ToolbarKey.COPY, ToolbarKey.REDO, ToolbarKey.PASTE,
+    )
 
     /**
      * Keeps the mic and ✨ keys in [groups] showing what they are doing: a green dot on the mic
@@ -93,6 +100,25 @@ object SovereignToolbar {
                 putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
             }
             putBoolean(PREF_PINNED_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: switch off mic, ✨, select, copy, redo and paste in the
+     * expanded toolbar (clipboard history stays). The pinned keys are a separate list and are left
+     * alone, so mic and ✨ stay in the suggestion strip. Fresh installs get this from the default list.
+     */
+    fun migrateToolbarTrim(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_TRIM_MIGRATED, false)) return
+        prefs.edit {
+            prefs.getString(Settings.PREF_TOOLBAR_KEYS, null)?.let { saved ->
+                val trimmed = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.joinToString(Separators.ENTRY) { e ->
+                    val key = TRIMMED.firstOrNull { e.startsWith(it.name + Separators.KV) }
+                    if (key != null) key.name + Separators.KV + "false" else e
+                }
+                putString(Settings.PREF_TOOLBAR_KEYS, trimmed)
+            }
+            putBoolean(PREF_TRIM_MIGRATED, true)
         }
     }
 
