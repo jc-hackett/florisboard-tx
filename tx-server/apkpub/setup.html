@@ -6,9 +6,9 @@
 <meta name="robots" content="noindex">
 <title>Set up SovereignBoard</title>
 <style>
-  :root { --bg: #fafafa; --fg: #1b1b1f; --muted: #5f5f66; --card: #fff; --line: #e3e3e8; --accent: #c2410c; }
+  :root { --bg: #fafafa; --fg: #1b1b1f; --muted: #5f5f66; --card: #fff; --line: #e3e3e8; --accent: #c2410c; --keybg: #f3f3f6; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #121214; --fg: #ececf1; --muted: #a1a1aa; --card: #1c1c20; --line: #2c2c33; --accent: #fb923c; }
+    :root { --bg: #121214; --fg: #ececf1; --muted: #a1a1aa; --card: #1c1c20; --line: #2c2c33; --accent: #fb923c; --keybg: #26262b; }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -21,8 +21,9 @@
   li h2 { font-size: 1.05rem; margin: 0 0 6px; }
   li h2::before { content: counter(step) ". "; color: var(--accent); }
   li p { margin: 0 0 10px; color: var(--muted); }
-  a.button { display: block; text-align: center; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; padding: 14px; border-radius: 12px; }
-  .warn { color: var(--accent); font-weight: 600; }
+  .button { display: block; width: 100%; text-align: center; background: var(--accent); color: #fff; text-decoration: none; font: inherit; font-weight: 600; padding: 14px; border: 0; border-radius: 12px; cursor: pointer; }
+  .key { font: 15px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--keybg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; word-break: break-all; margin: 0 0 10px; color: var(--fg); }
+  .note { color: var(--accent); font-weight: 600; }
   footer { color: var(--muted); font-size: 0.9rem; margin-top: 24px; }
 </style>
 </head>
@@ -34,54 +35,84 @@
     <li>
       <h2>Install the keyboard</h2>
       <p>Tap below. Your browser will say the file "might be harmful": that's normal for any app that isn't from the Play Store, so tap <b>Download anyway</b>. Then open the downloaded file, allow installs from your browser when Android asks, and tap Install.</p>
-      <a class="button" href="SovereignBoard.apk">Download the keyboard</a>
+      <a class="button" id="download" href="SovereignBoard.apk">Download the keyboard</a>
     </li>
     <li>
       <h2>Turn it on</h2>
       <p>Open the new app (SovereignBoard). It walks you through turning the keyboard on. Then, while typing anywhere, tap the small keyboard icon at the bottom of the screen and choose it.</p>
     </li>
     <li>
-      <h2>Connect it</h2>
-      <p>Come back to this page and tap the button. It fills in your personal access, so there's nothing to type.</p>
-      <a class="button" id="connect" href="#">Connect my keyboard</a>
-      <p id="missing" class="warn" hidden>This link is missing its personal part. Ask Jeremiah for your setup link again.</p>
+      <h2>Get your key</h2>
+      <p>Your key is shown <b>once</b>. As soon as it appears it's deleted from the server, so copy it straight away.</p>
+      <button class="button" id="reveal" type="button">Reveal my key</button>
+      <div id="shown" hidden>
+        <div class="key" id="key"></div>
+        <button class="button" id="copy" type="button">Copy my key</button>
+      </div>
+      <p id="copied" class="note" hidden>Copied, and cleared from this page. Now paste it into the app (next step).</p>
+      <p id="error" class="note" hidden></p>
     </li>
     <li>
-      <h2>Allow the microphone</h2>
-      <p>The keyboard's settings open on "Customization". Tap "Getting started" until all three lines have a tick.</p>
+      <h2>Paste it into SovereignBoard</h2>
+      <p>Open SovereignBoard, then <b>Customization</b>. Paste into <b>Access token</b> and tap <b>Save</b>. Then tap <b>Getting started</b> until all three lines have a tick (it will ask for the microphone).</p>
     </li>
   </ol>
-  <footer>This link is yours alone. Please don't forward it: it lets anyone use the keyboard as you. Your voice is turned into text on Jeremiah's own server and never saved.</footer>
+  <footer>This link works once. Your voice is turned into text on Jeremiah's own server and never saved.</footer>
 </main>
 <script>
   (function () {
-    // Link shapes: #dt_TOKEN.Name (current) or #n=Name&t=TOKEN (older). Apps sometimes escape
-    // the link once or twice on the way in, so undo that, then just look for the token.
-    var h = location.hash.slice(1);
-    for (var i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(h); i++) { try { h = decodeURIComponent(h); } catch (e) { break; } }
-    var tm = h.match(/dt_[A-Za-z0-9_-]{20,}/);
-    var token = tm ? tm[0] : "";
-    // Newest shape: #k<hex>.Name - the token spelled in 0-9a-f only, which no app rewrites.
-    var km = h.match(/(?:^|[^0-9a-z])k([0-9a-f]{40,})(?:\.([A-Za-z]+))?/);
-    if (!token && km) {
-      var t = "";
-      for (var j = 0; j + 1 < km[1].length; j += 2) t += String.fromCharCode(parseInt(km[1].substr(j, 2), 16));
-      if (t.indexOf("dt_") === 0) token = t;
-    }
-    var nm = h.match(/(?:^|[.&])n=([^&]+)/) || h.match(/dt_[A-Za-z0-9_-]{20,}\.([^&#]+)/) || (km && km[2] ? [null, km[2]] : null);
-    var name = nm ? nm[1] : "";
-    if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up SovereignBoard";
     // Download name carries the release number, e.g. SovereignBoard-0.1.apk.
     fetch("latest.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j.release) document.querySelector('a.button[href$=".apk"]').href = "SovereignBoard-" + j.release + ".apk";
+      if (j.release) document.getElementById("download").href = "SovereignBoard-" + j.release + ".apk";
     }).catch(function () {});
-    var connect = document.getElementById("connect");
-    if (token.indexOf("dt_") === 0) {
-      connect.href = "floristx://setup?server=" + encodeURIComponent(location.origin) + "&token=" + encodeURIComponent(token);
-    } else {
-      connect.hidden = true;
-      document.getElementById("missing").hidden = false;
+
+    // The invite code is hex only (#c=<32 hex>), so no app can mangle it; search the whole URL.
+    var cm = location.href.match(/[0-9a-f]{32}/);
+    var code = cm ? cm[0] : "";
+    var err = document.getElementById("error");
+    function fail(msg) { err.textContent = msg; err.hidden = false; }
+    if (!code) {
+      document.getElementById("reveal").hidden = true;
+      fail("This link is incomplete. Ask Jeremiah for a new one.");
+      return;
     }
+    var key = "";
+    document.getElementById("reveal").addEventListener("click", function () {
+      var btn = this;
+      btn.disabled = true;
+      fetch(location.origin + "/v1/claim", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code })
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        if (!res.ok) {
+          btn.hidden = true;
+          fail("This key was already revealed, or the link has expired. Ask Jeremiah for a new link.");
+          return;
+        }
+        key = res.j.key;
+        if (res.j.user) document.getElementById("hello").textContent = "Hi " + res.j.user.charAt(0).toUpperCase() + res.j.user.slice(1) + ", let's set up SovereignBoard";
+        document.getElementById("key").textContent = key;
+        btn.hidden = true;
+        document.getElementById("shown").hidden = false;
+      }).catch(function () { btn.disabled = false; fail("Couldn't reach the server. Check your connection and tap again."); });
+    });
+    document.getElementById("copy").addEventListener("click", function () {
+      function done() {
+        key = "";
+        document.getElementById("key").textContent = "";
+        document.getElementById("shown").hidden = true;
+        err.hidden = true;
+        document.getElementById("copied").hidden = false;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(key).then(done, function () {
+          fail("Couldn't copy automatically. Press and hold the key above to copy it, then paste it into the app.");
+        });
+      } else {
+        fail("Press and hold the key above to copy it, then paste it into the app.");
+      }
+    });
   })();
 </script>
 </body>

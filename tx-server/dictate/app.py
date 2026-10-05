@@ -22,6 +22,7 @@ Self-contained: everything it needs is in this folder + dictate.env, so it can
 move to its own server by copying /opt/dictate and the unit file.
 """
 import hashlib
+import json
 import hmac
 import io
 import logging
@@ -442,6 +443,40 @@ async def _finish(user: str, text: str, seconds: float, cleanup: bool, t_heard: 
              ms["after_release"])
     _record_count(user, words, seconds, status)
     return {"text": text, "raw": raw, "cleaned": cleaned, "ms": ms}  # raw: for the phone's opt-in edit log
+
+
+CLAIMS_FILE = os.environ.get("DICTATE_CLAIMS", "/var/lib/dictate/claims.json")
+_claims_lock = threading.Lock()
+
+
+@app.post("/v1/claim")
+async def claim(request: Request):
+    """One-time key reveal for the setup page. Swaps an invite code for its access key exactly
+    once, deleting it as it goes ("shredded"). Codes come from make-invite.py; 7-day expiry."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "expected JSON")
+    code = str(body.get("code", "")).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", code):
+        raise HTTPException(400, "that link is incomplete")
+    key = hashlib.sha256(code.encode()).hexdigest()
+    with _claims_lock:
+        try:
+            with open(CLAIMS_FILE) as f:
+                claims = json.load(f)
+        except (OSError, ValueError):
+            claims = {}
+        entry = claims.pop(key, None)
+        if entry is None or time.time() - entry.get("created", 0) > 7 * 86400:
+            log.info("status=claim_refused")
+            raise HTTPException(410, "this key was already revealed, or the link has expired")
+        with open(CLAIMS_FILE + ".new", "w") as f:
+            json.dump(claims, f)
+        os.chmod(CLAIMS_FILE + ".new", 0o600)
+        os.replace(CLAIMS_FILE + ".new", CLAIMS_FILE)
+    log.info("user=%s status=claimed", entry.get("user"))
+    return {"key": entry["token"], "user": entry.get("user")}
 
 
 @app.get("/v1/words")
