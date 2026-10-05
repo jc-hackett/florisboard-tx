@@ -109,6 +109,22 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
             firstOccurrenceOfTypedWordInSuggestions,
             typedWordFirstOccurrenceWordInfo
         )
+        // SovereignBoard: the strip shows a single word. While a word is being typed and the typed word is not a
+        //  known word, that shown word is what space commits (and it is drawn bold), whatever its score. Guards
+        //  kept from the checks above: autocorrect on for this field (so not URL/email/password), no digits,
+        //  not mostly caps, not a resumed word, and an @ or . in the typed word must also be in the suggestion.
+        val sovereignForceCorrection = !hasAutoCorrection && isCorrectionEnabled
+            && wordComposer.isComposingWord && !wordComposer.isResumed && !wordComposer.hasDigits()
+            && !(wordComposer.isMostlyCaps && !wordComposer.isAllUpperCase)
+            && typedWordFirstOccurrenceWordInfo == null && firstOccurrenceOfTypedWordInSuggestions < 0
+            && suggestionsContainer.firstOrNull()?.let { first ->
+                first.mWord != capitalizedTypedWord
+                    && (!typedWordString.contains('@') || first.mWord.contains('@'))
+                    && (!typedWordString.contains('.') || first.mWord.contains('.'))
+                    && isAllowedByAutoCorrectionWithSpaceFilter(first)
+            } == true
+            && mDictionaryFacilitator.hasAtLeastOneInitializedMainDictionary()
+        val willAutoCorrect = hasAutoCorrection || sovereignForceCorrection // SovereignBoard:
         val typedWordInfo = SuggestedWordInfo(typedWordString, "", SuggestedWordInfo.MAX_SCORE,
             SuggestedWordInfo.KIND_TYPED, typedWordFirstOccurrenceWordInfo?.mSourceDict ?: Dictionary.DICTIONARY_USER_TYPED,
             SuggestedWordInfo.NOT_AN_INDEX , SuggestedWordInfo.NOT_A_CONFIDENCE)
@@ -133,9 +149,9 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
         val typedWordWasCapitalized = capitalizedTypedWord != typedWordString
         val correctToCapitalizedWord = typedWordWasCapitalized && isCorrectionEnabled && Settings.getValues().mAutoCorrectCapitalizedSuggestion
             && !wordComposer.isCursorFrontOrMiddleOfComposingWord && typedWordString.drop(1).none { it.isUpperCase() }
-        val indexOfTypedWord = 1 + if (hasAutoCorrection) SuggestedWords.INDEX_OF_AUTO_CORRECTION else SuggestedWords.INDEX_OF_TYPED_WORD
+        val indexOfTypedWord = 1 + if (willAutoCorrect) SuggestedWords.INDEX_OF_AUTO_CORRECTION else SuggestedWords.INDEX_OF_TYPED_WORD // SovereignBoard: willAutoCorrect
         if (
-            (hasAutoCorrection
+            (willAutoCorrect // SovereignBoard: was hasAutoCorrection
                 || (Settings.getValues().mCenterSuggestionTextToEnter && !wordComposer.isResumed)
                 || typedWordWasCapitalized
             ) && suggestionsList.size >= indexOfTypedWord && capitalizedTypedWord.isNotEmpty()) {
@@ -149,9 +165,9 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
                 )
             }
         }
-        val isTypedWordValid = firstOccurrenceOfTypedWordInSuggestions > -1 || (!resultsArePredictions && !allowsToBeAutoCorrected)
+        val isTypedWordValid = firstOccurrenceOfTypedWordInSuggestions > -1 || (!resultsArePredictions && !allowsToBeAutoCorrected && !sovereignForceCorrection) // SovereignBoard: forced
         return SuggestedWords(suggestionsList, suggestionResults.mRawSuggestions, typedWordInfo,
-            isTypedWordValid, hasAutoCorrection || correctToCapitalizedWord, false, inputStyle, sequenceNumber)
+            isTypedWordValid, willAutoCorrect || correctToCapitalizedWord, false, inputStyle, sequenceNumber) // SovereignBoard: willAutoCorrect
     }
 
     // returns [allowsToBeAutoCorrected, hasAutoCorrection]

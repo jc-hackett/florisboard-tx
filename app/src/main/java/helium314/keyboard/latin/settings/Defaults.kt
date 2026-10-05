@@ -64,7 +64,7 @@ object Defaults {
     @JvmField
     var PREF_POPUP_ON = true
     const val PREF_AUTO_CORRECTION = true
-    const val PREF_MORE_AUTO_CORRECTION = false
+    const val PREF_MORE_AUTO_CORRECTION = true // SovereignBoard: the bold word is what space takes in every text field (URL/email still excluded)
     const val PREF_AUTO_CORRECT_CONFIDENCE = 0.24f
     const val PREF_AUTOCORRECT_SHORTCUTS = true
     const val PREF_BACKSPACE_REVERTS_AUTOCORRECT = true
