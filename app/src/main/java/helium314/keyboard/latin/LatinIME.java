@@ -69,6 +69,7 @@ import helium314.keyboard.latin.personalization.PersonalizationHelper;
 import helium314.keyboard.latin.settings.Settings;
 import helium314.keyboard.latin.settings.SettingsSubtype;
 import helium314.keyboard.latin.settings.SettingsValues;
+import helium314.keyboard.latin.utils.InputTypeUtils; // SovereignBoard:
 import helium314.keyboard.latin.suggestions.SuggestionStripView;
 import helium314.keyboard.latin.suggestions.SuggestionStripViewAccessor;
 import helium314.keyboard.latin.touchinputconsumer.GestureConsumer;
@@ -95,6 +96,7 @@ import helium314.keyboard.settings.SettingsActivity2;
 import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import helium314.keyboard.tx.EditorSnapshot; // SovereignBoard:
+import helium314.keyboard.tx.SovereignAddWord; // SovereignBoard:
 import helium314.keyboard.tx.SovereignUndo; // SovereignBoard:
 import kotlin.Unit;
 
@@ -1451,6 +1453,27 @@ public class LatinIME extends InputMethodService implements
         if (now != null) sovereignReloadAfterExternalEdit(now.getSelStart(), now.getSelEnd());
     }
 
+    // SovereignBoard: what the "+" button would add: the word being typed, if no dictionary knows it.
+    // Never in password fields or in incognito mode.
+    @Nullable
+    private String sovereignWordToAdd() {
+        final SettingsValues sv = mSettings.getCurrent();
+        if (mInputLogic.getComposingLength() <= 0 || sv.mIncognitoModeEnabled
+                || InputTypeUtils.isAnyPasswordInputType(sv.mInputAttributes.mInputType)) return null;
+        return SovereignAddWord.candidate(mInputLogic.mConnection.getTextBeforeCursor(64, 0),
+                w -> mDictionaryFacilitator.isValidSpellingWord(w));
+    }
+
+    // SovereignBoard: the "+" button. Save the word, then keep it as typed (so space doesn't
+    // autocorrect it away before the personal dictionary has reloaded).
+    @Override
+    public void sovereignAddWordToDictionary(@NonNull final String word) {
+        SovereignAddWord.add(this, word);
+        final SuggestedWords suggested = mInputLogic.mSuggestedWords;
+        if (mInputLogic.getComposingLength() > 0 && suggested != null && suggested.mTypedWordInfo != null)
+            pickSuggestionManually(suggested.mTypedWordInfo);
+    }
+
     // SovereignBoard: auto-sparkle waits until no word is being composed.
     public boolean sovereignIsComposingWord() {
         return mInputLogic.getComposingLength() > 0;
@@ -1557,6 +1580,7 @@ public class LatinIME extends InputMethodService implements
                 || noSuggestionsFromDictionaries) {
             mSuggestionStripView.setSuggestions(suggestedWords,
                     mRichImm.getCurrentSubtype().isRtlSubtype());
+            mSuggestionStripView.setAddWord(sovereignWordToAdd()); // SovereignBoard: the "+" button
             // Auto hide the toolbar if dictionary suggestions are available
             if (currentSettingsValues.mAutoHideToolbar && !noSuggestionsFromDictionaries) {
                 mSuggestionStripView.setToolbarVisibility(false);

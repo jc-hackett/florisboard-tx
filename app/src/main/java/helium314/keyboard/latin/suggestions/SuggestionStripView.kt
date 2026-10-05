@@ -83,6 +83,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         fun removeSuggestion(word: String?)
         fun removeExternalSuggestions()
         fun onSwipeDownOnToolbar()
+        fun sovereignAddWordToDictionary(word: String) // SovereignBoard: the "+" button
     }
 
     private val moreSuggestionsContainer: View
@@ -132,6 +133,30 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         LinearLayout.LayoutParams.MATCH_PARENT
     )
 
+    // SovereignBoard: the "+" button and the word it would add (null = hidden)
+    private var addWordCandidate: String? = null
+    private val addWordKey = TextView(context, null, R.attr.suggestionWordStyle).apply {
+        text = "+"
+        gravity = android.view.Gravity.CENTER
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24f)
+        setTextColor(Settings.getValues().mColors.get(ColorType.KEY_TEXT))
+        contentDescription = "Add to dictionary"
+        isVisible = false
+        setOnClickListener {
+            val word = addWordCandidate ?: return@setOnClickListener
+            AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, this, HapticEvent.KEY_PRESS)
+            setAddWord(null)
+            listener.sovereignAddWordToDictionary(word)
+        }
+    }
+
+    /** SovereignBoard: show "+" for [word], or hide it (null). */
+    fun setAddWord(word: String?) {
+        addWordCandidate = word
+        addWordKey.isVisible = word != null
+        addWordKey.contentDescription = if (word == null) "Add to dictionary" else "Add $word to dictionary"
+    }
+
     init {
         val colors = Settings.getValues().mColors
 
@@ -172,6 +197,9 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             if (pinnedKeyInToolbar != null && Settings.getValues().mQuickPinToolbarKeys)
                 pinnedKeyInToolbar.background = enabledToolKeyBackground
         }
+        // SovereignBoard: "+" (add the word being typed to the personal dictionary), left of the pinned keys
+        addWordKey.layoutParams = LinearLayout.LayoutParams(toolbarKeyLayoutParams).apply { weight = 1f }
+        pinnedKeys.addView(addWordKey, 0)
         toolbarContainer.doOnNextLayout {
             // set min with of the toolbar so the weight of the toolbar keys actually does something
             // todo: results in requestLayout() improperly called by android.widget.LinearLayout during layout: running second layout pass
