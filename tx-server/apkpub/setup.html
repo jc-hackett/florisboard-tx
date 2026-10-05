@@ -11,6 +11,7 @@
     :root { --bg: #121214; --fg: #ececf1; --muted: #a1a1aa; --card: #1c1c20; --line: #2c2c33; --accent: #fb923c; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 34rem; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 4px; }
@@ -54,9 +55,12 @@
 </main>
 <script>
   (function () {
-    var p = new URLSearchParams(location.hash.slice(1));
-    var token = p.get("t") || "";
-    var name = p.get("n") || "";
+    // Link shapes: #dt_TOKEN.Name (current; nothing for apps to cut), or the older #n=Name&t=TOKEN.
+    var h = decodeURIComponent(location.hash.slice(1));
+    var token = "", name = "";
+    var m = h.match(/^(dt_[A-Za-z0-9_-]+)(?:\.(.+))?$/);
+    if (m) { token = m[1]; name = m[2] || ""; }
+    else { var p = new URLSearchParams(h); token = p.get("t") || ""; name = p.get("n") || ""; }
     if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up SovereignBoard";
     // Download name carries the release number, e.g. SovereignBoard-0.1.apk.
     fetch("latest.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
