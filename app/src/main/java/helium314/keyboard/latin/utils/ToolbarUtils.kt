@@ -134,16 +134,18 @@ val toolbarKeyStrings = entries.associateWithTo(EnumMap(ToolbarKey::class.java))
 
 val defaultToolbarPref by lazy {
     // SovereignBoard: a short toolbar; mic and ✨ live pinned in the suggestion strip instead, and
-    // redo, select, copy and paste are left out (clipboard history covers pasting)
-    val default = listOf(SETTINGS, CLIPBOARD, UNDO, LEFT, RIGHT)
+    // redo, select, copy, paste and the cursor arrows are left out (clipboard history covers pasting,
+    // the spacebar moves the cursor)
+    val default = listOf(SETTINGS, CLIPBOARD, UNDO)
     val others = entries.filterNot { it in default || it == CLOSE_HISTORY }
     default.joinToString(Separators.ENTRY) { it.name + Separators.KV + true } + Separators.ENTRY +
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }
 }
 
-// SovereignBoard: mic then ✨ pinned in the suggestion strip, next to the word suggestions
-val defaultPinnedToolbarPref = (listOf(VOICE, AI_CLEANUP) + entries.filterNot { it == CLOSE_HISTORY || it == VOICE || it == AI_CLEANUP })
-    .joinToString(Separators.ENTRY) { it.name + Separators.KV + (it == VOICE || it == AI_CLEANUP) }
+// SovereignBoard: clipboard history, mic, then ✨ pinned in the suggestion strip, next to the word suggestions
+private val sovereignPinned = listOf(CLIPBOARD, VOICE, AI_CLEANUP)
+val defaultPinnedToolbarPref = (sovereignPinned + entries.filterNot { it == CLOSE_HISTORY || it in sovereignPinned })
+    .joinToString(Separators.ENTRY) { it.name + Separators.KV + (it in sovereignPinned) }
 
 val defaultClipboardToolbarPref by lazy {
     val default = listOf(CLEAR_CLIPBOARD, UP, DOWN, LEFT, RIGHT, UNDO, CUT, COPY, PASTE, SELECT_WORD, CLOSE_HISTORY)

@@ -33,7 +33,7 @@ object SovereignToolbar {
     private const val PREF_MIGRATED = "sovereign_ai_cleanup_toolbar_v1"
     private const val PREF_PINNED_MIGRATED = "sovereign_pinned_mic_sparkle_v1"
     private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
-    private const val PREF_NO_AUTO_TOOLBAR_MIGRATED = "sovereign_no_auto_show_toolbar_v1"
+    private const val PREF_STRIP_CLEANUP_MIGRATED = "sovereign_strip_cleanup_v1"
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -105,16 +105,34 @@ object SovereignToolbar {
     }
 
     /**
-     * One-time change, for existing installs: switch off "auto show toolbar". With it on, an empty box
-     * (or no suggestions) swaps the strip for the expanded toolbar, which hides the pinned mic and ✨.
-     * Off, the strip with its pinned keys always shows; the toolbar is still one tap away on the caret.
-     * Fresh installs already default to off.
+     * One-time change, for existing installs, so the mic and ✨ are always on screen:
+     * - switch off "auto show toolbar": with it on, an empty box (or no suggestions) swaps the strip
+     *   for the expanded toolbar, hiding the pinned keys. The toolbar stays one tap away on the caret.
+     * - take the cursor left/right arrows out of the expanded toolbar (the spacebar moves the cursor).
+     * - pin clipboard history in the strip, just left of the mic (it stays in the toolbar too).
+     * Fresh installs get all of this from the defaults.
      */
-    fun migrateNoAutoShowToolbar(prefs: SharedPreferences) {
-        if (prefs.getBoolean(PREF_NO_AUTO_TOOLBAR_MIGRATED, false)) return
+    fun migrateStripCleanup(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_STRIP_CLEANUP_MIGRATED, false)) return
         prefs.edit {
             putBoolean(Settings.PREF_AUTO_SHOW_TOOLBAR, false)
-            putBoolean(PREF_NO_AUTO_TOOLBAR_MIGRATED, true)
+            prefs.getString(Settings.PREF_TOOLBAR_KEYS, null)?.let { saved ->
+                val arrows = listOf(ToolbarKey.LEFT, ToolbarKey.RIGHT)
+                val trimmed = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.joinToString(Separators.ENTRY) { e ->
+                    val key = arrows.firstOrNull { e.startsWith(it.name + Separators.KV) }
+                    if (key != null) key.name + Separators.KV + "false" else e
+                }
+                putString(Settings.PREF_TOOLBAR_KEYS, trimmed)
+            }
+            prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, null)?.let { saved ->
+                val entries = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.toMutableList()
+                val clip = ToolbarKey.CLIPBOARD.name + Separators.KV
+                entries.removeAll { it.startsWith(clip) }
+                val voice = entries.indexOfFirst { it.startsWith(ToolbarKey.VOICE.name + Separators.KV) }
+                entries.add(if (voice >= 0) voice else entries.indexOfLast { it.endsWith("true") } + 1, clip + "true")
+                putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
+            }
+            putBoolean(PREF_STRIP_CLEANUP_MIGRATED, true)
         }
     }
 
