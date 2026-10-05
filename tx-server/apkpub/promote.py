@@ -37,6 +37,10 @@ def main():
         json.dump(info, f)
     os.chmod(os.path.join(OUT, "latest.json.new"), 0o644)
     os.replace(os.path.join(OUT, "latest.json.new"), os.path.join(OUT, "latest.json"))
+    # A friendly download name with the release number (the setup page links to it).
+    named = os.path.join(OUT, f"SovereignBoard-{number}.apk")
+    if not os.path.exists(named):
+        os.symlink("florisboard-tx.apk", named)
     releases.append({"release": number, "build": info["build"], "released": info["released"], "note": note})
     with open(RELEASES, "w") as f:
         json.dump(releases, f, indent=1)

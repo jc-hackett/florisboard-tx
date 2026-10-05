@@ -58,6 +58,10 @@
     var token = p.get("t") || "";
     var name = p.get("n") || "";
     if (name) document.getElementById("hello").textContent = "Hi " + name + ", let's set up SovereignBoard";
+    // Download name carries the release number, e.g. SovereignBoard-0.1.apk.
+    fetch("latest.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.release) document.querySelector('a.button[href$=".apk"]').href = "SovereignBoard-" + j.release + ".apk";
+    }).catch(function () {});
     var connect = document.getElementById("connect");
     if (token.indexOf("dt_") === 0) {
       connect.href = "floristx://setup?server=" + encodeURIComponent(location.origin) + "&token=" + encodeURIComponent(token);
