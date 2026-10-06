@@ -33,6 +33,9 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.ArrayList; // SovereignBoard:
+import java.util.HashSet; // SovereignBoard:
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -196,7 +199,8 @@ final class SuggestionStripLayoutHelper {
         // this is brittle
         final boolean isAutoCorrection = suggestedWords.mWillAutoCorrect
                 && indexInSuggestedWords == SuggestedWords.INDEX_OF_AUTO_CORRECTION;
-        final boolean isTypedWordValid = suggestedWords.mTypedWordValid
+        // SovereignBoard: with a single slot, bold means "space will correct to this"; the valid typed word is drawn plain
+        final boolean isTypedWordValid = suggestedWords.mTypedWordValid && mSuggestionsCountInStrip > 1
                 && indexInSuggestedWords == SuggestedWords.INDEX_OF_TYPED_WORD;
         if (!isAutoCorrection && !isTypedWordValid) {
             return word;
@@ -226,8 +230,67 @@ final class SuggestionStripLayoutHelper {
         final SettingsValues settingsValues = Settings.getValues();
         final boolean shouldOmitTypedWord = shouldOmitTypedWord(suggestedWords.mInputStyle,
                 settingsValues.mGestureFloatingPreviewTextEnabled, true);
+        if (shouldOmitTypedWord && showsValidTypedWordInSingleSlot(suggestedWords)) { // SovereignBoard:
+            return indexInSuggestedWords == SuggestedWords.INDEX_OF_TYPED_WORD ? mCenterPositionInStrip : -1;
+        }
         return getPositionInSuggestionStrip(indexInSuggestedWords, suggestedWords.mWillAutoCorrect,
                 shouldOmitTypedWord, mCenterPositionInStrip, mTypedWordPositionWhenAutocorrect);
+    }
+
+    /**
+     * SovereignBoard: with a single slot, a valid typed word and no auto-correction pending, the slot shows the
+     * word as typed (tapping commits it), and completions move to the long-press panel. Not when the entry at
+     * index 1 already is the typed word in another case (capitalized at sentence start, or "center the typed
+     * word" setting): upstream already puts that one in the slot.
+     */
+    private boolean showsValidTypedWordInSingleSlot(final SuggestedWords suggestedWords) {
+        if (mSuggestionsCountInStrip != 1 || !suggestedWords.mTypedWordValid || suggestedWords.mWillAutoCorrect
+                || suggestedWords.size() == 0 || suggestedWords.isPunctuationSuggestions()) {
+            return false;
+        }
+        final SuggestedWordInfo typed = suggestedWords.getInfo(SuggestedWords.INDEX_OF_TYPED_WORD);
+        if (!typed.isKindOf(SuggestedWordInfo.KIND_TYPED) || TextUtils.isEmpty(typed.mWord)) {
+            return false;
+        }
+        return suggestedWords.size() <= SuggestedWords.INDEX_OF_AUTO_CORRECTION
+                || !typed.mWord.equalsIgnoreCase(suggestedWords.getWord(SuggestedWords.INDEX_OF_AUTO_CORRECTION));
+    }
+
+    /**
+     * SovereignBoard: the words for the long-press panel, in order: the typed word first when it is not what the
+     * strip shows (so the user can always keep what he typed), then everything from {@code startIndex} on,
+     * without anything already shown in the strip and without repeats.
+     */
+    private SuggestedWords buildMoreSuggestionsWords(final SuggestedWords suggestedWords, final int startIndex,
+            final ArrayList<Integer> shownIndices) {
+        final HashSet<String> seen = new HashSet<>();
+        for (final int index : shownIndices) {
+            if (index >= 0 && index < suggestedWords.size()) seen.add(suggestedWords.getWord(index));
+        }
+        final ArrayList<SuggestedWordInfo> infos = new ArrayList<>();
+        if (suggestedWords.size() > 0 && !shownIndices.contains(SuggestedWords.INDEX_OF_TYPED_WORD)) {
+            final SuggestedWordInfo typed = suggestedWords.getInfo(SuggestedWords.INDEX_OF_TYPED_WORD);
+            if (typed.isKindOf(SuggestedWordInfo.KIND_TYPED) && !TextUtils.isEmpty(typed.mWord)
+                    && seen.add(typed.mWord)) {
+                infos.add(typed);
+            }
+        }
+        final int size = Math.min(suggestedWords.size(), SuggestedWords.MAX_SUGGESTIONS);
+        for (int index = Math.max(startIndex, 0); index < size && infos.size() < SuggestedWords.MAX_SUGGESTIONS; index++) {
+            if (shownIndices.contains(index)) continue;
+            final SuggestedWordInfo info = suggestedWords.getInfo(index);
+            if (seen.add(info.mWord)) infos.add(info);
+        }
+        // mWillAutoCorrect false: the panel must not swap labels (MoreSuggestions.isIndexSubjectToAutoCorrection)
+        return new SuggestedWords(infos, null, suggestedWords.mTypedWordInfo, false, false,
+                suggestedWords.mIsObsoleteSuggestions, suggestedWords.mInputStyle, suggestedWords.mSequenceNumber);
+    }
+
+    private SuggestedWords mMoreSuggestionsWords = SuggestedWords.getEmptyInstance(); // SovereignBoard:
+
+    /** SovereignBoard: what the long-press panel shows for the suggestions last laid out (start at index 0). */
+    public SuggestedWords getMoreSuggestionsWords() {
+        return mMoreSuggestionsWords;
     }
 
     static boolean shouldOmitTypedWord(final int inputStyle,
@@ -329,6 +392,7 @@ final class SuggestionStripLayoutHelper {
             final ViewGroup stripView,
             final ViewGroup placerView) {
         if (suggestedWords.isPunctuationSuggestions()) {
+            mMoreSuggestionsWords = suggestedWords; // SovereignBoard: panel unchanged for punctuation
             return layoutPunctuationsAndReturnStartIndexOfMoreSuggestions(
                     (PunctuationSuggestions)suggestedWords, stripView);
         }
@@ -344,7 +408,13 @@ final class SuggestionStripLayoutHelper {
             // Layout only the most relevant suggested word at the center of the suggestion strip
             // by consolidating all slots in the strip.
             final int countInStrip = 1;
-            mMoreSuggestionsAvailable = (wordCountToShow > countInStrip);
+            // SovereignBoard: panel words; the hint shows whenever the panel has something
+            final Integer centerIndex = (Integer)centerWordView.getTag();
+            final ArrayList<Integer> shown = new ArrayList<>();
+            if (centerIndex != null) shown.add(centerIndex);
+            mMoreSuggestionsWords = buildMoreSuggestionsWords(suggestedWords,
+                    (centerIndex == null ? 0 : centerIndex) + 1, shown);
+            mMoreSuggestionsAvailable = (wordCountToShow > countInStrip) || !mMoreSuggestionsWords.isEmpty();
             layoutWord(context, mCenterPositionInStrip, stripWidth - mPadding);
             stripView.addView(centerWordView);
             setLayoutWeight(centerWordView, 1.0f, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -356,7 +426,14 @@ final class SuggestionStripLayoutHelper {
         }
 
         final int countInStrip = mSuggestionsCountInStrip;
-        mMoreSuggestionsAvailable = (wordCountToShow > countInStrip);
+        // SovereignBoard: panel words; the hint shows whenever the panel has something
+        final ArrayList<Integer> shown = new ArrayList<>();
+        for (int positionInStrip = 0; positionInStrip < countInStrip; positionInStrip++) {
+            final Object tag = mWordViews.get(positionInStrip).getTag();
+            if (tag instanceof Integer) shown.add((Integer) tag);
+        }
+        mMoreSuggestionsWords = buildMoreSuggestionsWords(suggestedWords, startIndexOfMoreSuggestions, shown);
+        mMoreSuggestionsAvailable = (wordCountToShow > countInStrip) || !mMoreSuggestionsWords.isEmpty();
         @SuppressWarnings("unused")
         int x = 0;
         for (int positionInStrip = 0; positionInStrip < countInStrip; positionInStrip++) {

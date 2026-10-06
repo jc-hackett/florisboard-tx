@@ -481,15 +481,20 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     private fun showMoreSuggestions(): Boolean {
-        if (suggestedWords.size() <= startIndexOfMoreSuggestions) {
+        // SovereignBoard: the panel shows the helper's list (typed word first when the strip doesn't show it,
+        //  nothing already in the strip); punctuation keeps the upstream start index
+        val punctuation = suggestedWords.isPunctuationSuggestions
+        val panelWords = if (punctuation) suggestedWords else layoutHelper.moreSuggestionsWords
+        val fromIndex = if (punctuation) startIndexOfMoreSuggestions else 0
+        if (panelWords.size() <= fromIndex) {
             return false
         }
         if (!moreSuggestionsView.show(
-                suggestedWords, startIndexOfMoreSuggestions, moreSuggestionsContainer, layoutHelper, this
+                panelWords, fromIndex, moreSuggestionsContainer, layoutHelper, this
         ))
             return false
-        for (i in 0..<startIndexOfMoreSuggestions) {
-            wordViews[i].isPressed = false
+        for (view in wordViews) { // SovereignBoard: was 0..<startIndexOfMoreSuggestions (a suggestion index, not a view index)
+            view.isPressed = false
         }
         return true
     }
