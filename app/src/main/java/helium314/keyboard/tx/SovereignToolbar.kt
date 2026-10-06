@@ -11,9 +11,12 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import androidx.core.content.edit
+import androidx.core.view.isVisible
+import java.util.WeakHashMap
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet
 import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.common.Colors
@@ -53,27 +56,59 @@ object SovereignToolbar {
      * ✨ turned into a white undo arrow on red while a cleanup can be undone.
      * Returns the job to cancel when the views go away.
      */
-    fun observe(groups: List<ViewGroup>): Job =
+    fun observe(groups: List<ViewGroup>, tokenBanner: View? = null): Job =
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
-            combine(DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered) { mic, busy, undo ->
-                Triple(mic, busy, undo)
-            }.collect { (mic, busy, undo) ->
-                val micDot = when (mic) {
-                    DictationState.RECORDING -> GREEN
-                    DictationState.WORKING -> GREY
-                    else -> null
+            tokenBanner?.let { SovereignToken.checkIfDue(it.context) }
+            combine(
+                DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered, SovereignToken.problem
+            ) { mic, busy, undo, tokenProblem -> Pair(Look(mic, busy, undo), tokenProblem) }
+                .collect { (look, tokenProblem) ->
+                    apply(groups, look, force = true)
+                    tokenBanner?.isVisible = tokenProblem
                 }
-                for (group in groups) {
-                    group.findViewWithTag<ImageButton>(ToolbarKey.VOICE)?.let {
-                        decorate(it, ToolbarKey.VOICE, micDot, strong = mic == DictationState.RECORDING)
+        }
+
+    /**
+     * Brings the mic and ✨ keys in [groups] up to the current state, for key views HeliBoard has just
+     * (re)created or redrawn (strip updates, pinning, toolbar shown or hidden). Views already showing
+     * the current state are left alone, so this is cheap enough to call on every strip update.
+     */
+    fun refresh(groups: List<ViewGroup>) =
+        apply(groups, Look(DictationManager.current.value, AiCleanup.busy.value, SovereignUndo.cleanupOffered.value), force = false)
+
+    /** What the mic and ✨ keys should show. */
+    private data class Look(val mic: DictationState, val busy: Boolean, val undo: Boolean)
+
+    /** The look last drawn on each key view, so [refresh] only touches views that are out of date. */
+    private val drawn = WeakHashMap<ImageButton, Any>()
+
+    private fun apply(groups: List<ViewGroup>, look: Look, force: Boolean) {
+        val micDot = when (look.mic) {
+            DictationState.RECORDING -> GREEN
+            DictationState.WORKING -> GREY
+            else -> null
+        }
+        val micLook = Pair(micDot, look.mic == DictationState.RECORDING)
+        val sparkleLook: Any = if (look.undo && !look.busy) "undo" else look.busy
+        for (group in groups) {
+            for (i in 0 until group.childCount) {
+                val button = group.getChildAt(i) as? ImageButton ?: continue
+                when (button.tag) {
+                    ToolbarKey.VOICE -> {
+                        if (!force && drawn[button] == micLook) continue
+                        decorate(button, ToolbarKey.VOICE, micDot, strong = micLook.second)
+                        drawn[button] = micLook
                     }
-                    group.findViewWithTag<ImageButton>(ToolbarKey.AI_CLEANUP)?.let {
-                        if (undo && !busy) decorateUndo(it)
-                        else decorate(it, ToolbarKey.AI_CLEANUP, if (busy) GREY else null, strong = busy)
+                    ToolbarKey.AI_CLEANUP -> {
+                        if (!force && drawn[button] == sparkleLook) continue
+                        if (sparkleLook == "undo") decorateUndo(button)
+                        else decorate(button, ToolbarKey.AI_CLEANUP, if (look.busy) GREY else null, strong = look.busy)
+                        drawn[button] = sparkleLook
                     }
                 }
             }
         }
+    }
 
     private fun decorate(button: ImageButton, key: ToolbarKey, dot: Int?, strong: Boolean) {
         val colors: Colors = Settings.getValues().mColors

@@ -4,6 +4,7 @@
 // switching field or hiding the keyboard withdraws it.
 package helium314.keyboard.tx
 
+import android.os.SystemClock
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,17 @@ import kotlinx.coroutines.flow.asStateFlow
 /** The whole box and the cursor, read whichever way the app allows. */
 data class EditorSnapshot(val text: String, val selStart: Int, val selEnd: Int)
 
-/** One undo on offer, valid while the cursor stays where our edit put it. Main thread only. */
+/**
+ * One undo on offer, valid while the cursor stays where our edit put it. Main thread only.
+ *
+ * The position is the one our edit is *expected* to leave, worked out from the text before the edit,
+ * not read back afterwards: many editors (Jetpack Compose text fields among them) answer a read made
+ * right after an edit with the text from before it, and report the real cursor only a frame later.
+ * Recording that stale position made the editor's own report of our edit look like a cursor move,
+ * which withdrew the undo at once. For a short while after the offer, reports that differ from the
+ * expected position are taken as our edit still landing and followed, not treated as a move; typing
+ * in that window is caught separately ([SovereignUndo.onUserInput]).
+ */
 class UndoSlot<T : Any> {
     private val _offered = MutableStateFlow(false)
     /** True while the undo is available; the toolbar redraws the key on every change. */
@@ -22,11 +33,20 @@ class UndoSlot<T : Any> {
     private var item: T? = null
     private var selStart = -1
     private var selEnd = -1
+    private var expectedStart = -1
+    private var expectedEnd = -1
+    private var settled = false
+    private var settleUntil = 0L
 
+    /** Offers [item]; [selStart] / [selEnd] are where our edit leaves the cursor. */
     fun offer(item: T, selStart: Int, selEnd: Int) {
         this.item = item
         this.selStart = selStart
         this.selEnd = selEnd
+        expectedStart = selStart
+        expectedEnd = selEnd
+        settled = false
+        settleUntil = SystemClock.uptimeMillis() + SETTLE_MS
         _offered.value = true
     }
 
@@ -40,11 +60,28 @@ class UndoSlot<T : Any> {
 
     fun onSelectionChanged(ic: InputConnection?, newSelStart: Int, newSelEnd: Int) {
         if (item == null) return
+        if (newSelStart == expectedStart && newSelEnd == expectedEnd) {
+            // the editor's own report of our edit
+            settled = true
+            selStart = newSelStart
+            selEnd = newSelEnd
+            return
+        }
         if (newSelStart == selStart && newSelEnd == selEnd) return
+        if (!settled && SystemClock.uptimeMillis() < settleUntil) {
+            // our edit still landing (in-between or app-adjusted positions): follow it
+            selStart = newSelStart
+            selEnd = newSelEnd
+            return
+        }
         // Possibly a late report from before our own edit: believe the editor's current state.
         val now = ic?.let { SovereignUndo.snapshot(it) }
         if (now != null && now.selStart == selStart && now.selEnd == selEnd) return
         clear()
+    }
+
+    private companion object {
+        const val SETTLE_MS = 1500L
     }
 }
 
@@ -65,6 +102,13 @@ object SovereignUndo {
     fun onUpdateSelection(ic: InputConnection?, newSelStart: Int, newSelEnd: Int) {
         cleanup.onSelectionChanged(ic, newSelStart, newSelEnd)
         dictation.onSelectionChanged(ic, newSelStart, newSelEnd)
+    }
+
+    /** The user typed, deleted, pasted, swiped a word or picked a suggestion: nothing stays on offer. */
+    @JvmStatic
+    fun onUserInput() {
+        cleanup.clear()
+        dictation.clear()
     }
 
     /** Field changed or keyboard hidden: nothing stays on offer. */

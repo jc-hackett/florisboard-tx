@@ -39,7 +39,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -108,7 +113,22 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) { checkForUpdate() }
+    LaunchedEffect(Unit) {
+        SovereignToken.checkIfDue(ctx)
+        checkForUpdate()
+    }
+
+    // Opened from the red token banner: put the cursor in the Access token field, keyboard up.
+    val tokenFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusTokenRequested by SovereignToken.focusToken.collectAsState()
+    LaunchedEffect(focusTokenRequested) {
+        if (!focusTokenRequested) return@LaunchedEffect
+        delay(350) // let the screen finish sliding in
+        runCatching { tokenFocus.requestFocus() }
+        keyboard?.show()
+        SovereignToken.tokenFocused()
+    }
 
     SearchSettingsScreen(
         onClickBack = onClickBack,
@@ -142,11 +162,11 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                 OutlinedButton(
                     onClick = {
                         ctx.startActivity(Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/jc-hackett/florisboard-tx/commits/heliboard"))
+                            Uri.parse("https://dictate.limn.dev/app/whatsnew-h.html"))
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("What's new (on GitHub)") }
+                ) { Text("What's new") }
 
                 Text("Dictation", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
@@ -164,7 +184,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(tokenFocus),
                 )
                 OutlinedTextField(
                     value = words,
@@ -175,10 +195,12 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                 )
                 Button(
                     onClick = {
+                        val tokenChanged = token.trim() != settings.token
                         settings.serverUrl = server
                         settings.token = token
                         settings.words = words
                         server = settings.serverUrl
+                        SovereignToken.onTokenSaved(ctx, tokenChanged)
                         Toast.makeText(ctx, "Saved", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.fillMaxWidth(),

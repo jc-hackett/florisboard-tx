@@ -144,8 +144,12 @@ class ServerTranscriber(context: Context) : Transcriber {
                 }
             }
             val code = conn.responseCode
-            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(DictationMessages.BAD_TOKEN)
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                SovereignToken.onRejected(appContext)
+                throw DictationException(DictationMessages.BAD_TOKEN)
+            }
             if (code !in 200..299) throw DictationException(DictationMessages.SERVER)
+            SovereignToken.onAccepted(appContext)
             val json = conn.inputStream.bufferedReader().use { it.readText() }
             val text = JSONObject(json).optString("text").trim()
             return if (text.isEmpty()) null else "$text "
@@ -156,7 +160,10 @@ class ServerTranscriber(context: Context) : Transcriber {
         } catch (e: IOException) {
             // The server may have refused before we finished sending (a bad token, say).
             val code = runCatching { conn.responseCode }.getOrNull()
-            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) throw DictationException(DictationMessages.BAD_TOKEN)
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                SovereignToken.onRejected(appContext)
+                throw DictationException(DictationMessages.BAD_TOKEN)
+            }
             throw DictationException(DictationMessages.NETWORK)
         } catch (e: Exception) {
             throw DictationException(DictationMessages.NETWORK)

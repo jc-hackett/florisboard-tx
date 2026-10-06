@@ -39,8 +39,20 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_COPY_TO_CLIPBOARD, true)
         set(value) = prefs.edit().putBoolean(KEY_COPY_TO_CLIPBOARD, value).apply()
 
+    /** The server answered 401 / 403 to the saved token; cleared when a call with it succeeds. */
+    var tokenRejected: Boolean
+        get() = prefs.getBoolean(KEY_TOKEN_REJECTED, false)
+        set(value) = prefs.edit().putBoolean(KEY_TOKEN_REJECTED, value).apply()
+
+    /** When the token was last checked against the server (System.currentTimeMillis). */
+    var lastTokenCheck: Long
+        get() = prefs.getLong(KEY_LAST_TOKEN_CHECK, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_TOKEN_CHECK, value).apply()
+
     companion object {
         private const val FILE = "dictation"
+        private const val KEY_TOKEN_REJECTED = "token_rejected"
+        private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
         private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"
         const val DEFAULT_SERVER = "https://dictate.limn.dev"
         private const val KEY_SERVER = "server_url"

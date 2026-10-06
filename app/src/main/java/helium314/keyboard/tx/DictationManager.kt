@@ -135,8 +135,11 @@ class DictationManager(private val ime: InputMethodService) {
                     if (ic != null) {
                         // Keep a word that was being composed instead of replacing it.
                         ic.finishComposingText()
+                        // Where the text goes, read before the edit (many editors still report the
+                        // old cursor right after one; see UndoSlot).
+                        val at = SovereignUndo.snapshot(ic)?.let { minOf(it.selStart, it.selEnd) }
                         ic.commitText(text, 1)
-                        SovereignUndo.snapshot(ic)?.let { SovereignUndo.dictation.offer(text, it.selStart, it.selEnd) }
+                        if (at != null) SovereignUndo.dictation.offer(text, at + text.length, at + text.length)
                         copyToClipboard(text)
                     }
                 }

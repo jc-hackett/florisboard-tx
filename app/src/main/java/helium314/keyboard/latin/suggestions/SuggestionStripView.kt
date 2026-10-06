@@ -62,6 +62,7 @@ import kotlin.math.min
 import androidx.core.view.isGone
 import helium314.keyboard.latin.utils.onClickToolbarKey
 import helium314.keyboard.latin.utils.onLongClickToolbarKey
+import helium314.keyboard.tx.SovereignToken // SovereignBoard:
 import helium314.keyboard.tx.SovereignToolbar // SovereignBoard:
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job // SovereignBoard:
@@ -135,6 +136,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     // SovereignBoard: the "+" button and the word it would add (null = hidden)
     private var addWordCandidate: String? = null
+    private val tokenBanner = SovereignToken.createKeyboardBanner(context) // SovereignBoard:
     private val addWordKey = TextView(context, null, R.attr.suggestionWordStyle).apply {
         text = "+"
         gravity = android.view.Gravity.CENTER
@@ -200,6 +202,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         // SovereignBoard: "+" (add the word being typed to the personal dictionary), left of the pinned keys
         addWordKey.layoutParams = LinearLayout.LayoutParams(toolbarKeyLayoutParams).apply { weight = 1f }
         pinnedKeys.addView(addWordKey, 0)
+        // SovereignBoard: red "Enter your access token" banner over the strip while the token needs the user
+        addView(tokenBanner, RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT))
         toolbarContainer.doOnNextLayout {
             // set min with of the toolbar so the weight of the toolbar keys actually does something
             // todo: results in requestLayout() improperly called by android.widget.LinearLayout during layout: running second layout pass
@@ -269,6 +273,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         }
 
         toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * direction
+        SovereignToolbar.refresh(listOf(toolbar, pinnedKeys)) // SovereignBoard:
     }
 
     fun setSuggestions(suggestions: SuggestedWords, isRtlLanguage: Boolean) {
@@ -338,7 +343,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         sovereignIndicatorJob?.cancel()
-        sovereignIndicatorJob = SovereignToolbar.observe(listOf(toolbar, pinnedKeys)) // SovereignBoard:
+        sovereignIndicatorJob = SovereignToolbar.observe(listOf(toolbar, pinnedKeys), tokenBanner) // SovereignBoard:
     }
 
     override fun onDetachedFromWindow() {
@@ -570,6 +575,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         toolbarExpandKey.setOnClickListener(if (!toolbarIsExpandable) null else this)
         pinnedKeys.visibility = suggestionsStrip.visibility
         isExternalSuggestionVisible = false
+        SovereignToolbar.refresh(listOf(toolbar, pinnedKeys)) // SovereignBoard: keep the mic / ✨ look (undo, dots) after redraws
     }
 
     private fun addKeyToPinnedKeys(pinnedKey: ToolbarKey) {
@@ -586,6 +592,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         copy.isActivated = original.isActivated
         setupKey(copy, Settings.getValues().mColors)
         pinnedKeys.addView(copy)
+        SovereignToolbar.refresh(listOf(pinnedKeys)) // SovereignBoard: keep the mic / ✨ look on a newly pinned key
     }
 
     private fun setupKey(view: ImageButton, colors: Colors) {

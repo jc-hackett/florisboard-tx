@@ -97,6 +97,7 @@ import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import helium314.keyboard.tx.EditorSnapshot; // SovereignBoard:
 import helium314.keyboard.tx.SovereignAddWord; // SovereignBoard:
+import helium314.keyboard.tx.SovereignToken; // SovereignBoard:
 import helium314.keyboard.tx.SovereignUndo; // SovereignBoard:
 import kotlin.Unit;
 
@@ -881,6 +882,7 @@ public class LatinIME extends InputMethodService implements
         super.onStartInputView(editorInfo, restarting);
 
         setGestureDataGatheringMode(editorInfo, restarting);
+        SovereignToken.checkIfDue(this); // SovereignBoard: light token check, at most hourly
 
         mDictionaryFacilitator.onStartInput();
         // Switch to the null consumer to handle cases leading to early exit below, for which we
@@ -1487,6 +1489,9 @@ public class LatinIME extends InputMethodService implements
     // This method is public for testability of LatinIME, but also in the future it should
     // completely replace #onCodeInput.
     public void onEvent(@NonNull final Event event) {
+        // SovereignBoard: typing, deleting or pasting withdraws the ✨ / dictation undo
+        if (event.getCodePoint() > 0 || event.getKeyCode() == KeyCode.DELETE || event.getKeyCode() == KeyCode.CLIPBOARD_PASTE)
+            SovereignUndo.onUserInput();
         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
             // SovereignBoard: mic key drives built-in server dictation instead of switching IME
             if (mDictationManager == null) mDictationManager = new DictationManager(this);
@@ -1512,6 +1517,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     public void onStartBatchInput() {
+        SovereignUndo.onUserInput(); // SovereignBoard: gesture typing withdraws the ✨ / dictation undo
         mInputLogic.onStartBatchInput(mSettings.getCurrent(), mKeyboardSwitcher, mHandler);
         mGestureConsumer.onGestureStarted(mRichImm.getCurrentSubtypeLocale(), mKeyboardSwitcher.getKeyboard());
     }
@@ -1615,6 +1621,7 @@ public class LatinIME extends InputMethodService implements
     // interface
     @Override
     public void pickSuggestionManually(final SuggestedWordInfo suggestionInfo) {
+        SovereignUndo.onUserInput(); // SovereignBoard: picking a suggestion withdraws the ✨ / dictation undo
         final InputTransaction completeInputTransaction = mInputLogic.onPickSuggestionManually(
                 mSettings.getCurrent(), suggestionInfo,
                 mKeyboardSwitcher.getKeyboardCapsMode(),

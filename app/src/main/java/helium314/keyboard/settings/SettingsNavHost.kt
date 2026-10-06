@@ -35,6 +35,8 @@ import helium314.keyboard.settings.screens.ToolbarScreen
 import helium314.keyboard.settings.screens.gesturedata.GestureDataScreen
 import helium314.keyboard.settings.screens.gesturedata.ReviewScreen
 import helium314.keyboard.tx.SovereignScreen // SovereignBoard:
+import helium314.keyboard.tx.SovereignToken // SovereignBoard:
+import helium314.keyboard.tx.WithTokenBanner // SovereignBoard:
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -67,6 +69,7 @@ fun SettingsNavHost(
         popExitTransition = { slideOutHorizontally(targetOffsetX = { +it * dir }, animationSpec = animation) }
     ) {
         composable(SettingsDestination.Settings) {
+            WithTokenBanner(onBannerClick = { SovereignToken.requestTokenFocus(); navController.navigate(SettingsDestination.Sovereign) }) { // SovereignBoard:
             MainSettingsScreen(
                 onClickAbout = { navController.navigate(SettingsDestination.About) },
                 onClickTextCorrection = { navController.navigate(SettingsDestination.TextCorrection) },
@@ -82,9 +85,10 @@ fun SettingsNavHost(
                 onClickBack = ::goBack,
                 onClickSovereign = { navController.navigate(SettingsDestination.Sovereign) }, // SovereignBoard:
             )
+            } // SovereignBoard: WithTokenBanner
         }
         composable(SettingsDestination.Sovereign) { // SovereignBoard:
-            SovereignScreen(onClickBack = ::goBack)
+            WithTokenBanner(onBannerClick = { SovereignToken.requestTokenFocus() }) { SovereignScreen(onClickBack = ::goBack) }
         }
         composable(SettingsDestination.About) {
             AboutScreen(onClickBack = ::goBack)

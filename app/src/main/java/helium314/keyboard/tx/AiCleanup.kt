@@ -82,16 +82,25 @@ class AiCleanup private constructor(context: Context) {
                     val nowAfter = ic2.getTextAfterCursor(MAX_CHARS, 0)?.toString().orEmpty()
                     if (nowBefore != before || nowAfter != after) return@launch toast("AI cleanup: text changed, not applied")
                 }
+                // Where the cleaned text will start, from the text before the edit: everything before
+                // the cursor (or the selection) when the whole box was read; null if the box is too
+                // long to see its start. Not read back after the edit, since many editors still
+                // answer with the old text then (see UndoSlot).
+                val start: Int? = if (selected.isEmpty()) 0
+                    else ic2.getTextBeforeCursor(MAX_CHARS, 0)?.length?.takeIf { it < MAX_CHARS }
                 ic2.beginBatchEdit()
                 ic2.finishComposingText()
                 if (selected.isEmpty()) ic2.deleteSurroundingText(before.length, after.length)
                 ic2.commitText(cleaned, 1)
                 ic2.endBatchEdit()
-                val now = resync(ime, ic2)
-                if (now != null && now.selStart >= cleaned.length) {
-                    SovereignUndo.cleanup.offer(CleanupDone(now.selStart - cleaned.length, cleaned, original), now.selStart, now.selEnd)
+                resync(ime, ic2)
+                if (start != null) {
+                    val cursor = start + cleaned.length
+                    SovereignUndo.cleanup.offer(CleanupDone(start, cleaned, original), cursor, cursor)
+                    toast("Cleaned up. Tap ✨ again to undo.")
+                } else {
+                    toast("Cleaned up.")
                 }
-                toast("Cleaned up. Tap again to undo.")
             } catch (e: Exception) {
                 toast("AI cleanup: ${e.message ?: "couldn't reach the server."}")
             } finally {
@@ -159,10 +168,9 @@ class AiCleanup private constructor(context: Context) {
             ic2.commitText(cleaned, 1)
             ic2.setSelection(now.selStart + delta, now.selEnd + delta)
             ic2.endBatchEdit()
-            val after = resync(ime, ic2)
-            if (after != null) {
-                SovereignUndo.cleanup.offer(CleanupDone(start, cleaned, sentence), after.selStart, after.selEnd)
-            }
+            resync(ime, ic2)
+            // Offered at the cursor position our edit leaves, not one read back (see UndoSlot).
+            SovereignUndo.cleanup.offer(CleanupDone(start, cleaned, sentence), now.selStart + delta, now.selEnd + delta)
         }
     }
 
@@ -178,8 +186,11 @@ class AiCleanup private constructor(context: Context) {
         try {
             conn.outputStream.use { it.write(JSONObject().put("text", text).toString().toByteArray()) }
             when (val code = conn.responseCode) {
-                in 200..299 -> {}
-                401 -> error("the server didn't accept your access token.")
+                in 200..299 -> SovereignToken.onAccepted(appContext)
+                401, 403 -> {
+                    SovereignToken.onRejected(appContext)
+                    error("the server didn't accept your access token.")
+                }
                 413 -> error("that's too long (about 300 words at most). Select a part and tap again.")
                 429 -> error(
                     if (serverReason(conn).contains("daily")) "you've reached today's limit. It resets tomorrow."

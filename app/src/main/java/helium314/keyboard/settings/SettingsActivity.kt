@@ -41,6 +41,7 @@ import helium314.keyboard.latin.utils.DeviceProtectedUtils
 import helium314.keyboard.latin.utils.ExecutorUtils
 import helium314.keyboard.latin.utils.GestureDataGatheringSettings
 import helium314.keyboard.latin.utils.IntentUtils
+import helium314.keyboard.tx.SovereignToken // SovereignBoard:
 import helium314.keyboard.latin.utils.JniUtils
 import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.latin.utils.UncachedInputMethodManagerUtils
@@ -88,6 +89,8 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
         settingsContainer = SettingsContainer(this)
 
         val spellchecker = intent?.getBooleanExtra("spellchecker", false) ?: false
+        val focusToken = intent?.getBooleanExtra(SovereignToken.EXTRA_FOCUS_TOKEN, false) ?: false // SovereignBoard:
+        if (focusToken) SovereignToken.requestTokenFocus() // SovereignBoard:
 
         val cv = ComposeView(context = this)
         setContentView(cv)
@@ -118,7 +121,8 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
                             }
                         }
                     else {
-                        SettingsNavHost(onClickBack = { this.finish() })
+                        // SovereignBoard: the token banner opens the SovereignBoard screen directly
+                        SettingsNavHost(onClickBack = { this.finish() }, startDestination = if (focusToken) SettingsDestination.Sovereign else null)
                         if (showWelcomeWizard) {
                             WelcomeWizard(close = { showWelcomeWizard = false }, finish = this::finish)
                         } else if (crashReports.isNotEmpty()) {
