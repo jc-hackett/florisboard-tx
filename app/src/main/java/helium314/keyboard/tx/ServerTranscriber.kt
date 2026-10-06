@@ -11,6 +11,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
+import helium314.keyboard.latin.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,6 +52,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         val server = settings.serverUrl
         val token = settings.token
         val words = settings.wordList
+        val keep = settings.keepRecordings
         if (server.isBlank() || token.isBlank()) throw DictationException(DictationMessages.NOT_SET_UP)
         if (!server.startsWith("https://")) throw DictationException(DictationMessages.NOT_HTTPS)
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO)
@@ -64,7 +66,7 @@ class ServerTranscriber(context: Context) : Transcriber {
                 // Recording never waits on the network: chunks queue here while the connection
                 // is still being set up, and the uploader drains them as fast as it can.
                 val chunks = Channel<ByteArray>(Channel.UNLIMITED)
-                val upload = async { stream(server, token, words, chunks) }
+                val upload = async { stream(server, token, words, keep, chunks) }
                 val recorded = try {
                     record(stillRecording) { chunks.trySend(it) }
                 } finally {
@@ -119,6 +121,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         server: String,
         token: String,
         words: List<String>,
+        keep: Boolean,
         chunks: ReceiveChannel<ByteArray>,
     ): String? {
         val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
@@ -132,6 +135,11 @@ class ServerTranscriber(context: Context) : Transcriber {
             setRequestProperty("Content-Type", "application/octet-stream")
             if (words.isNotEmpty()) {
                 setRequestProperty("X-Dictate-Words", URLEncoder.encode(words.joinToString("\n"), "UTF-8"))
+            }
+            // Opt-in only ("Save my recordings"): without this header the server stores nothing.
+            if (keep) {
+                setRequestProperty("X-Dictate-Keep", "1")
+                setRequestProperty("X-Dictate-App", BuildConfig.BUILD_COMMIT_HASH.take(12))
             }
         }
         // A cancelled dictation must drop the connection at once, even mid-write.
@@ -180,6 +188,50 @@ class ServerTranscriber(context: Context) : Transcriber {
         /** Short on purpose: the server normally answers well under a second after release. */
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val READ_TIMEOUT_MS = 8_000
+    }
+}
+
+/**
+ * The user's opt-in kept recordings on the server ("Save my recordings"): how many there are, and
+ * deleting them all. Both throw [DictationException] with a user-facing message on failure.
+ */
+object KeptRecordings {
+    /** Number of kept recordings. */
+    suspend fun count(context: Context): Int = call(context, "GET").optInt("count", 0)
+
+    /** Deletes every kept recording; returns how many were deleted. */
+    suspend fun deleteAll(context: Context): Int = call(context, "DELETE").optInt("deleted", 0)
+
+    private suspend fun call(context: Context, method: String): JSONObject = withContext(Dispatchers.IO) {
+        val settings = DictationSettings(context)
+        val server = settings.serverUrl
+        val token = settings.token
+        if (server.isBlank() || token.isBlank()) throw DictationException(DictationMessages.NOT_SET_UP)
+        if (!server.startsWith("https://")) throw DictationException(DictationMessages.NOT_HTTPS)
+        val conn = (URL(server.trimEnd('/') + "/v1/keep").openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 5_000
+            readTimeout = 15_000
+            useCaches = false
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        try {
+            val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                SovereignToken.onRejected(context)
+                throw DictationException(DictationMessages.BAD_TOKEN)
+            }
+            if (code !in 200..299) throw DictationException(DictationMessages.SERVER)
+            JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+        } catch (e: DictationException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw DictationException(DictationMessages.NETWORK)
+        } finally {
+            conn.disconnect()
+        }
     }
 }
 

@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -113,9 +115,46 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         }
     }
 
+    // "Help it learn your voice": opt-in kept recordings on the server.
+    var keepRecordings by remember { mutableStateOf(settings.keepRecordings) }
+    var keptStatus by remember { mutableStateOf("") }
+    var keepBusy by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    fun recordingsText(n: Int) = if (n == 1) "1 recording saved" else "$n recordings saved"
+
+    fun refreshKept() {
+        if (settings.token.isBlank()) { keptStatus = ""; return }
+        scope.launch {
+            keptStatus = try {
+                recordingsText(KeptRecordings.count(ctx))
+            } catch (e: DictationException) {
+                "Couldn't check saved recordings: ${e.userMessage}"
+            }
+        }
+    }
+
+    fun deleteKept() {
+        if (keepBusy) return
+        keepBusy = true
+        keptStatus = "Deleting…"
+        scope.launch {
+            try {
+                val n = KeptRecordings.deleteAll(ctx)
+                keptStatus = if (n == 1) "Deleted 1 recording. 0 recordings saved."
+                    else "Deleted $n recordings. 0 recordings saved."
+            } catch (e: DictationException) {
+                keptStatus = "Couldn't delete: ${e.userMessage}"
+            } finally {
+                keepBusy = false
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         SovereignToken.checkIfDue(ctx)
         checkForUpdate()
+        refreshKept()
     }
 
     // Opened from the red token banner: put the cursor in the Access token field, keyboard up.
@@ -218,6 +257,43 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     Switch(
                         checked = copyDictation,
                         onCheckedChange = { copyDictation = it; settings.copyToClipboard = it },
+                    )
+                }
+
+                Text("Help it learn your voice", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Save my recordings to train on my voice", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Your recordings are kept encrypted on Jeremiah's server and used only to make " +
+                                "recognition better for you. Turn off any time.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = keepRecordings,
+                        onCheckedChange = { keepRecordings = it; settings.keepRecordings = it },
+                    )
+                }
+                if (keptStatus.isNotEmpty()) {
+                    Text(keptStatus, style = MaterialTheme.typography.bodyMedium)
+                }
+                OutlinedButton(
+                    onClick = { confirmDelete = true },
+                    enabled = !keepBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Delete my recordings") }
+                if (confirmDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmDelete = false },
+                        title = { Text("Delete my recordings?") },
+                        text = { Text("This deletes every recording saved on the server for you. It can't be undone.") },
+                        confirmButton = {
+                            TextButton(onClick = { confirmDelete = false; deleteKept() }) { Text("Delete") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                        },
                     )
                 }
 

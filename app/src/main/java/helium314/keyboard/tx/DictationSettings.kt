@@ -39,6 +39,14 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_COPY_TO_CLIPBOARD, true)
         set(value) = prefs.edit().putBoolean(KEY_COPY_TO_CLIPBOARD, value).apply()
 
+    /**
+     * Opt-in: ask the server to keep each dictation's audio (encrypted) to train on the user's own
+     * voice. Off by default; sent as X-Dictate-Keep: 1 only while on.
+     */
+    var keepRecordings: Boolean
+        get() = prefs.getBoolean(KEY_KEEP_RECORDINGS, false)
+        set(value) = prefs.edit().putBoolean(KEY_KEEP_RECORDINGS, value).apply()
+
     /** The server answered 401 / 403 to the saved token; cleared when a call with it succeeds. */
     var tokenRejected: Boolean
         get() = prefs.getBoolean(KEY_TOKEN_REJECTED, false)
@@ -54,6 +62,7 @@ class DictationSettings(context: Context) {
         private const val KEY_TOKEN_REJECTED = "token_rejected"
         private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
         private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"
+        private const val KEY_KEEP_RECORDINGS = "keep_recordings"
         const val DEFAULT_SERVER = "https://dictate.limn.dev"
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
