@@ -93,6 +93,8 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
         if (focusToken) SovereignToken.requestTokenFocus() // SovereignBoard:
         val installUpdate = intent?.getBooleanExtra(SovereignToken.EXTRA_INSTALL_UPDATE, false) ?: false // SovereignBoard:
         if (installUpdate) helium314.keyboard.tx.SovereignUpdates.requestInstall() // SovereignBoard:
+        // SovereignBoard: the keyboard's microphone banner opens our screen
+        val openSovereign = intent?.getBooleanExtra(SovereignToken.EXTRA_OPEN_SOVEREIGN, false) ?: false
 
         val cv = ComposeView(context = this)
         setContentView(cv)
@@ -124,7 +126,7 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
                         }
                     else {
                         // SovereignBoard: the token banner opens the SovereignBoard screen directly
-                        SettingsNavHost(onClickBack = { this.finish() }, startDestination = if (focusToken || installUpdate) SettingsDestination.Sovereign else null)
+                        SettingsNavHost(onClickBack = { this.finish() }, startDestination = if (focusToken || installUpdate || openSovereign) SettingsDestination.Sovereign else null)
                         if (showWelcomeWizard) {
                             WelcomeWizard(close = { showWelcomeWizard = false }, finish = this::finish)
                         } else if (crashReports.isNotEmpty()) {

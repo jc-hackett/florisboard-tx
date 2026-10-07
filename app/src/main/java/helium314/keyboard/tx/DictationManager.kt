@@ -101,6 +101,12 @@ class DictationManager(private val ime: InputMethodService) {
     }
 
     private fun start() {
+        // Without the microphone permission: say so in the keyboard's red banner (tap opens settings).
+        if (!SovereignToken.hasMic(appContext)) {
+            SovereignToken.onMicWithoutPermission(appContext)
+            toast(SovereignToken.MIC_TEXT.replace("tap to allow", "tap the red bar to allow"))
+            return
+        }
         capturing = true
         _state.value = DictationState.RECORDING
         sessionJob = scope.launch {

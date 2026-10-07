@@ -1,12 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // SovereignBoard: the red banner, shown in the keyboard (over the suggestion strip) and along the bottom
 // of the settings screens: "Enter your access token" while no token is saved or the server rejects the
-// saved one; "Your access token has been changed" for a few seconds after a new token checks out; and
-// "Update available — tap to install" when a newer build is out. The token messages win.
+// saved one; "Your access token has been changed" for a few seconds after a new token checks out;
+// "Microphone not allowed — tap to allow" while the microphone permission is missing (in the keyboard only
+// after the mic was tapped; at the top of the settings screens); and "Update available — tap to install"
+// when a newer build is out. The token messages win, then the microphone, then updates.
 package helium314.keyboard.tx
 
+import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.graphics.Color
 import android.graphics.Typeface
 import android.util.TypedValue
@@ -55,6 +68,7 @@ import kotlin.math.abs
 enum class SovereignBanner(val text: String) {
     TOKEN(SovereignToken.BANNER_TEXT),
     TOKEN_CHANGED("Your access token has been changed"),
+    MIC(SovereignToken.MIC_TEXT),
     UPDATE("Update available — tap to install"),
 }
 
@@ -65,6 +79,11 @@ enum class SovereignBanner(val text: String) {
 object SovereignToken {
     const val RED = 0xFFD81B3C.toInt()
     const val BANNER_TEXT = "Enter your access token"
+    const val MIC_TEXT = "Microphone not allowed — tap to allow"
+    /** Intent extra for the settings activity: open the SovereignBoard screen. */
+    const val EXTRA_OPEN_SOVEREIGN = "sovereign_open"
+    /** Intent extra for the settings activity: open the SovereignBoard screen and ask for photo access. */
+    const val EXTRA_PHOTO_ACCESS = "sovereign_photo_access"
     /** Intent extra for the settings activity: open the SovereignBoard screen, token field focused. */
     const val EXTRA_FOCUS_TOKEN = "sovereign_focus_token"
     /** Intent extra for the settings activity: open the SovereignBoard screen and install the update. */
@@ -81,16 +100,52 @@ object SovereignToken {
 
     private val _changedFlash = MutableStateFlow(false)
 
-    /** Which banner shows now, if any: token trouble first, then the token-changed flash, then updates. */
+    private val _micMissing = MutableStateFlow(false)
+    /** True while the app lacks the microphone permission (re-read with [refreshMic]). */
+    val micMissing: StateFlow<Boolean> = _micMissing.asStateFlow()
+    /** The mic key was tapped without the permission: the keyboard's banner says so until it is granted. */
+    private val _micAsked = MutableStateFlow(false)
+
+    /**
+     * Which banner the keyboard shows now, if any: token trouble first, then the token-changed flash, then
+     * the microphone (only after the mic key was tapped without permission), then updates.
+     */
     val banner: StateFlow<SovereignBanner?> =
-        combine(_problem, _changedFlash, SovereignUpdates.available) { problem, changed, update ->
-            when {
-                problem -> SovereignBanner.TOKEN
-                changed -> SovereignBanner.TOKEN_CHANGED
-                update -> SovereignBanner.UPDATE
-                else -> null
-            }
+        combine(_problem, _changedFlash, _micMissing, _micAsked, SovereignUpdates.available) { problem, changed, mic, asked, update ->
+            pick(problem, changed, mic && asked, update)
         }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    /** The same for the settings screens, where a missing microphone permission always shows. */
+    val settingsBanner: StateFlow<SovereignBanner?> =
+        combine(_problem, _changedFlash, _micMissing, SovereignUpdates.available) { problem, changed, mic, update ->
+            pick(problem, changed, mic, update)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    private fun pick(problem: Boolean, changed: Boolean, mic: Boolean, update: Boolean) = when {
+        problem -> SovereignBanner.TOKEN
+        changed -> SovereignBanner.TOKEN_CHANGED
+        mic -> SovereignBanner.MIC
+        update -> SovereignBanner.UPDATE
+        else -> null
+    }
+
+    fun hasMic(context: Context) = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        PackageManager.PERMISSION_GRANTED
+
+    /** Re-reads the microphone permission (settings resumed, keyboard opened, permission answered). */
+    @JvmStatic
+    fun refreshMic(context: Context) {
+        val missing = !hasMic(context)
+        _micMissing.value = missing
+        if (!missing) _micAsked.value = false
+    }
+
+    /** The mic key was tapped without the permission: show the microphone banner in the keyboard. */
+    @JvmStatic
+    fun onMicWithoutPermission(context: Context) {
+        refreshMic(context)
+        _micAsked.value = _micMissing.value
+    }
 
     private val _focusToken = MutableStateFlow(false)
     /** Set when the banner was tapped: the SovereignBoard screen focuses the token field and resets it. */
@@ -134,6 +189,7 @@ object SovereignToken {
     @JvmStatic
     fun onKeyboardOpened(context: Context) {
         checkIfDue(context)
+        refreshMic(context)
         val s = DictationSettings(context)
         if (s.tokenChangedPending) {
             s.tokenChangedPending = false
@@ -209,6 +265,15 @@ object SovereignToken {
         runCatching { context.startActivity(intent) }
     }
 
+    /** Opens the SovereignBoard settings screen, with [extra] (if any) set. */
+    fun openSovereign(context: Context, extra: String = EXTRA_OPEN_SOVEREIGN) {
+        val intent = Intent(context, SettingsActivity2::class.java)
+            .putExtra(EXTRA_OPEN_SOVEREIGN, true)
+            .putExtra(extra, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        runCatching { context.startActivity(intent) }
+    }
+
     /** Opens the SovereignBoard settings screen and starts installing the update. */
     fun openUpdate(context: Context) {
         SovereignUpdates.requestInstall()
@@ -223,6 +288,7 @@ object SovereignToken {
         when (banner.value) {
             SovereignBanner.TOKEN -> openSettings(context)
             SovereignBanner.UPDATE -> openUpdate(context)
+            SovereignBanner.MIC -> openSovereign(context) // the keyboard can't ask for a permission itself
             SovereignBanner.TOKEN_CHANGED, null -> Unit
         }
     }
@@ -256,18 +322,26 @@ object SovereignToken {
 }
 
 /**
- * The settings app's banner, along the bottom of a screen. [onOpenSovereign] goes to the SovereignBoard
- * screen (a no-op when already there).
+ * The settings app's banner: along the bottom of a screen for the token and update messages, at the top
+ * for the microphone. [onOpenSovereign] goes to the SovereignBoard screen (a no-op when already there).
  */
 @Composable
-fun SovereignTokenBanner(onOpenSovereign: () -> Unit) {
+fun SovereignTokenBanner(onOpenSovereign: () -> Unit, atTop: Boolean) {
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) {
-        SovereignToken.refresh(ctx)
-        SovereignUpdates.checkIfDue(ctx)
+    val kind by SovereignToken.settingsBanner.collectAsState()
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        SovereignToken.refreshMic(ctx)
+        // Refused for good: Android won't ask again, so open the app's permission page instead.
+        val activity = ctx.findActivity()
+        if (!granted && activity != null &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.RECORD_AUDIO)) {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", ctx.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { ctx.startActivity(intent) }
+        }
     }
-    val kind by SovereignToken.banner.collectAsState()
     val shown = kind ?: return
+    if ((shown == SovereignBanner.MIC) != atTop) return
     Box(
         Modifier.fillMaxWidth()
             .background(androidx.compose.ui.graphics.Color(SovereignToken.RED))
@@ -275,10 +349,11 @@ fun SovereignTokenBanner(onOpenSovereign: () -> Unit) {
                 when (shown) {
                     SovereignBanner.TOKEN -> { SovereignToken.requestTokenFocus(); onOpenSovereign() }
                     SovereignBanner.UPDATE -> { SovereignUpdates.requestInstall(); onOpenSovereign() }
+                    SovereignBanner.MIC -> micLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     SovereignBanner.TOKEN_CHANGED -> Unit
                 }
             }
-            .navigationBarsPadding()
+            .then(if (atTop) Modifier.statusBarsPadding() else Modifier.navigationBarsPadding())
             .padding(horizontal = 16.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -291,15 +366,36 @@ fun SovereignTokenBanner(onOpenSovereign: () -> Unit) {
     }
 }
 
-/** [content] with the red banner along its bottom while there is something to say. */
+private fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
+/** [content] with the red banner along its bottom (for the microphone: its top) while there is something to say. */
 @Composable
 fun WithTokenBanner(onOpenSovereign: () -> Unit, content: @Composable () -> Unit) {
-    val kind by SovereignToken.banner.collectAsState()
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) {
+        SovereignToken.refresh(ctx)
+        SovereignUpdates.checkIfDue(ctx)
+    }
+    // the microphone banner goes as soon as the permission is granted, also from the system's settings page
+    LifecycleResumeEffect(Unit) {
+        SovereignToken.refreshMic(ctx)
+        onPauseOrDispose { }
+    }
+    val kind by SovereignToken.settingsBanner.collectAsState()
     Column(Modifier.fillMaxSize()) {
+        SovereignTokenBanner(onOpenSovereign, atTop = true)
         Box(
             Modifier.weight(1f)
-                .then(if (kind != null) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)
+                .then(if (kind == SovereignBanner.MIC) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)
+                .then(if (kind != null && kind != SovereignBanner.MIC) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)
         ) { content() }
-        SovereignTokenBanner(onOpenSovereign)
+        SovereignTokenBanner(onOpenSovereign, atTop = false)
     }
 }

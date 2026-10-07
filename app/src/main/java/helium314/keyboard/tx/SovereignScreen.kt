@@ -85,10 +85,11 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         shotAccess = screenshotAccessText(ctx)
     }
-    var micGranted by remember { mutableStateOf(hasMic(ctx)) }
+    val micMissing by SovereignToken.micMissing.collectAsState()
+    val micGranted = !micMissing
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        micGranted = granted || hasMic(ctx)
-        if (!micGranted) openAppSettings(ctx)
+        SovereignToken.refreshMic(ctx)
+        if (!granted && !hasMic(ctx)) openAppSettings(ctx)
     }
 
     // Keyboard updates (same flow as the FlorisBoard edition's AppUpdater)
