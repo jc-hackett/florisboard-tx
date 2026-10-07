@@ -85,6 +85,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         fun removeExternalSuggestions()
         fun onSwipeDownOnToolbar()
         fun sovereignAddWordToDictionary(word: String) // SovereignBoard: the "+" button
+        fun sovereignCommitEmoji(emoji: String) // SovereignBoard: the emoji slot
     }
 
     private val moreSuggestionsContainer: View
@@ -152,6 +153,33 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         }
     }
 
+    // SovereignBoard: the emoji slot, a fixed square at the right end of the word slots
+    private val emojiKey = TextView(context, null, R.attr.suggestionWordStyle).apply {
+        gravity = android.view.Gravity.CENTER
+        minWidth = 0
+        minimumWidth = 0
+        setPadding(0, 0, 0, 0)
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22f)
+        setSingleLine(true)
+        Settings.getValues().mColors.setBackground(this, ColorType.STRIP_BACKGROUND)
+        contentDescription = resources.getString(R.string.spoken_empty_suggestion)
+        isEnabled = false
+        setOnClickListener {
+            val emoji = tag as? String ?: return@setOnClickListener
+            AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, this, HapticEvent.KEY_PRESS)
+            listener.sovereignCommitEmoji(emoji)
+        }
+        setOnLongClickListener {
+            AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
+            showMoreSuggestions()
+        }
+    }
+
+    // SovereignBoard: word B and the "+" button share slot B, so "+" never moves word A
+    private val wordBRow = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+    }
+
     /** SovereignBoard: show "+" for [word], or hide it (null). */
     fun setAddWord(word: String?) {
         addWordCandidate = word
@@ -199,9 +227,12 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             if (pinnedKeyInToolbar != null && Settings.getValues().mQuickPinToolbarKeys)
                 pinnedKeyInToolbar.background = enabledToolKeyBackground
         }
-        // SovereignBoard: "+" (add the word being typed to the personal dictionary), left of the pinned keys
-        addWordKey.layoutParams = LinearLayout.LayoutParams(toolbarKeyLayoutParams).apply { weight = 1f }
-        pinnedKeys.addView(addWordKey, 0)
+        // SovereignBoard: "+" (add the word being typed to the personal dictionary) sits at the right end of
+        //  word slot B (see SuggestionStripLayoutHelper.setSovereignSlots), so the pinned keys never move
+        addWordKey.minWidth = 0
+        addWordKey.minimumWidth = 0
+        addWordKey.setPadding(0, 0, 0, 0)
+        addWordKey.layoutParams = LinearLayout.LayoutParams(ADD_WORD_KEY_WIDTH_DP.dpToPx(resources), LinearLayout.LayoutParams.MATCH_PARENT)
         // SovereignBoard: red "Enter your access token" banner over the strip while the token needs the user
         addView(tokenBanner, RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT))
         toolbarContainer.doOnNextLayout {
@@ -217,7 +248,9 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     private var suggestedWords = SuggestedWords.getEmptyInstance()
     private var startIndexOfMoreSuggestions = 0
     private var isExternalSuggestionVisible = false // Required to disable the more suggestions if other suggestions are visible
-    private val layoutHelper = SuggestionStripLayoutHelper(context, attrs, defStyle, wordViews, dividerViews, debugInfoViews)
+    private val layoutHelper = SuggestionStripLayoutHelper(context, attrs, defStyle, wordViews, dividerViews, debugInfoViews).apply {
+        setSovereignSlots(wordBRow, addWordKey, emojiKey, EMOJI_SLOT_WIDTH_DP.dpToPx(resources)) // SovereignBoard:
+    }
     private val moreSuggestionsView = moreSuggestionsContainer.findViewById<MoreSuggestionsView>(R.id.more_suggestions_view).apply {
         val slidingListener = object : SimpleOnGestureListener() {
             override fun onScroll(down: MotionEvent?, me: MotionEvent, deltaX: Float, deltaY: Float): Boolean {
@@ -612,6 +645,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         @JvmField
         var DEBUG_SUGGESTIONS = false
         private const val DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.5f
+        private const val EMOJI_SLOT_WIDTH_DP = 48 // SovereignBoard:
+        private const val ADD_WORD_KEY_WIDTH_DP = 40 // SovereignBoard:
         private val TAG = SuggestionStripView::class.java.simpleName
     }
 }

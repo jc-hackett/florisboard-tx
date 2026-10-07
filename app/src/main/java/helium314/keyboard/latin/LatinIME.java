@@ -1480,6 +1480,17 @@ public class LatinIME extends InputMethodService implements
             pickSuggestionManually(suggested.mTypedWordInfo);
     }
 
+    // SovereignBoard: the emoji slot. A word being typed is committed first (as space would, minus the
+    // space), the emoji goes right after it, then one space. Without a word, the emoji is just inserted.
+    @Override
+    public void sovereignCommitEmoji(@NonNull final String emoji) {
+        SovereignUndo.onUserInput();
+        final boolean wasComposing = mInputLogic.getComposingLength() > 0;
+        onTextInput(emoji);
+        if (wasComposing) onTextInput(" ");
+        helium314.keyboard.keyboard.emoji.RecentEmojis.add(emoji);
+    }
+
     // SovereignBoard: auto-sparkle waits until no word is being composed.
     public boolean sovereignIsComposingWord() {
         return mInputLogic.getComposingLength() > 0;

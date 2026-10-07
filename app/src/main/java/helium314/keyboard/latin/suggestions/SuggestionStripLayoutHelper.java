@@ -199,9 +199,8 @@ final class SuggestionStripLayoutHelper {
         // this is brittle
         final boolean isAutoCorrection = suggestedWords.mWillAutoCorrect
                 && indexInSuggestedWords == SuggestedWords.INDEX_OF_AUTO_CORRECTION;
-        // SovereignBoard: with a single slot, bold means "space will correct to this"; the valid typed word is drawn plain
-        final boolean isTypedWordValid = suggestedWords.mTypedWordValid && mSuggestionsCountInStrip > 1
-                && indexInSuggestedWords == SuggestedWords.INDEX_OF_TYPED_WORD;
+        // SovereignBoard: bold only means "space will correct to this"; the valid typed word is drawn plain
+        final boolean isTypedWordValid = false;
         if (!isAutoCorrection && !isTypedWordValid) {
             return word;
         }
@@ -244,7 +243,7 @@ final class SuggestionStripLayoutHelper {
      * word" setting): upstream already puts that one in the slot.
      */
     private boolean showsValidTypedWordInSingleSlot(final SuggestedWords suggestedWords) {
-        if (mSuggestionsCountInStrip != 1 || !suggestedWords.mTypedWordValid || suggestedWords.mWillAutoCorrect
+        if (!suggestedWords.mTypedWordValid || suggestedWords.mWillAutoCorrect
                 || suggestedWords.size() == 0 || suggestedWords.isPunctuationSuggestions()) {
             return false;
         }
@@ -397,6 +396,10 @@ final class SuggestionStripLayoutHelper {
                     (PunctuationSuggestions)suggestedWords, stripView);
         }
 
+        if (mSovereignRowB != null) { // SovereignBoard: fixed [word A][word B][emoji] strip
+            return layoutSovereignSlots(context, suggestedWords, stripView);
+        }
+
         final int wordCountToShow = suggestedWords.getWordCountToShow();
         final int startIndexOfMoreSuggestions = setupWordViewsAndReturnStartIndexOfMoreSuggestions(
                 suggestedWords, mSuggestionsCountInStrip);
@@ -504,6 +507,141 @@ final class SuggestionStripLayoutHelper {
         return wordView;
     }
 
+    // SovereignBoard: the fixed three-slot strip. Left of the pinned keys: [word A][word B (+ "+")][emoji].
+    //  A and B always get the same width (half of what the emoji slot leaves); the emoji slot is a fixed square.
+    //  Text is start-aligned, fixed size, ellipsized at the end; nothing re-centres or resizes as you type.
+    private ViewGroup mSovereignRowB;
+    private View mSovereignAddWordView;
+    private TextView mSovereignEmojiView;
+    private int mSovereignEmojiSlotWidth;
+
+    /** SovereignBoard: switch on the fixed three-slot strip. {@code rowB} holds word B and the "+" button. */
+    public void setSovereignSlots(final ViewGroup rowB, final View addWordView, final TextView emojiView,
+            final int emojiSlotWidth) {
+        mSovereignRowB = rowB;
+        mSovereignAddWordView = addWordView;
+        mSovereignEmojiView = emojiView;
+        mSovereignEmojiSlotWidth = emojiSlotWidth;
+    }
+
+    /** SovereignBoard: suggestion indices in the order the word slots take them (A first, then B). */
+    private ArrayList<Integer> sovereignSlotOrder(final SuggestedWords suggestedWords) {
+        final ArrayList<Integer> order = new ArrayList<>();
+        final int size = suggestedWords.size();
+        final boolean omitTypedWord = shouldOmitTypedWord(suggestedWords.mInputStyle,
+                Settings.getValues().mGestureFloatingPreviewTextEnabled, true);
+        if (omitTypedWord && showsValidTypedWordInSingleSlot(suggestedWords)) {
+            for (int i = 0; i < size; i++) order.add(i); // the valid typed word as typed, then completions
+        } else if (omitTypedWord) {
+            for (int i = 1; i < size; i++) order.add(i); // the bold auto-correction (or best guess) first
+            // last resort: the typed word, so a slot left empty (or only emoji found) still offers it
+            if (size > 0 && suggestedWords.getInfo(SuggestedWords.INDEX_OF_TYPED_WORD).isKindOf(SuggestedWordInfo.KIND_TYPED))
+                order.add(SuggestedWords.INDEX_OF_TYPED_WORD);
+        } else if (suggestedWords.mWillAutoCorrect) {
+            order.add(SuggestedWords.INDEX_OF_AUTO_CORRECTION);
+            order.add(SuggestedWords.INDEX_OF_TYPED_WORD);
+            for (int i = 2; i < size; i++) order.add(i);
+        } else {
+            for (int i = 0; i < size; i++) order.add(i);
+        }
+        return order;
+    }
+
+    private int layoutSovereignSlots(final Context context, final SuggestedWords suggestedWords,
+            final ViewGroup stripView) {
+        final TextView wordA = mWordViews.get(0);
+        final TextView wordB = mWordViews.get(1);
+        // slot A: the primary word; slot B: the next best different word. Emoji never go in A or B.
+        int indexA = -1;
+        int indexB = -1;
+        for (final int index : sovereignSlotOrder(suggestedWords)) {
+            if (index < 0 || index >= suggestedWords.size()) continue;
+            final SuggestedWordInfo info = suggestedWords.getInfo(index);
+            if (TextUtils.isEmpty(info.mWord) || info.isEmoji()) continue;
+            if (indexA < 0) {
+                indexA = index;
+            } else if (!info.mWord.equalsIgnoreCase(suggestedWords.getWord(indexA))) {
+                indexB = index;
+                break;
+            }
+        }
+        // emoji slot: the best emoji the dictionaries offer for this word / context
+        int emojiIndex = -1;
+        for (int index = 0; index < suggestedWords.size(); index++) {
+            if (suggestedWords.getInfo(index).isEmoji()) {
+                emojiIndex = index;
+                break;
+            }
+        }
+
+        final ArrayList<Integer> shown = new ArrayList<>();
+        if (indexA >= 0) shown.add(indexA);
+        if (indexB >= 0) shown.add(indexB);
+        if (emojiIndex >= 0) shown.add(emojiIndex);
+        mMoreSuggestionsWords = buildMoreSuggestionsWords(suggestedWords, 0, shown);
+        mMoreSuggestionsAvailable = !mMoreSuggestionsWords.isEmpty();
+
+        setupSovereignWord(context, wordA, suggestedWords, indexA, mMoreSuggestionsAvailable);
+        setupSovereignWord(context, wordB, suggestedWords, indexB, false);
+        final String emoji = emojiIndex >= 0 ? suggestedWords.getWord(emojiIndex) : null;
+        mSovereignEmojiView.setText(emoji);
+        mSovereignEmojiView.setTag(emoji);
+        mSovereignEmojiView.setContentDescription(emoji != null ? emoji
+                : context.getResources().getString(R.string.spoken_empty_suggestion));
+        mSovereignEmojiView.setEnabled(emoji != null
+                || AccessibilityUtils.Companion.getInstance().isTouchExplorationEnabled());
+
+        // fixed layout: A | B (+) | emoji — always all three, empty or not
+        stripView.addView(wordA);
+        setLayoutWeight(wordA, 1.0f, ViewGroup.LayoutParams.MATCH_PARENT);
+        addDivider(stripView, mDividerViews.get(1));
+        mSovereignRowB.removeAllViews();
+        mSovereignRowB.addView(wordB);
+        setLayoutWeight(wordB, 1.0f, ViewGroup.LayoutParams.MATCH_PARENT);
+        mSovereignRowB.addView(mSovereignAddWordView);
+        stripView.addView(mSovereignRowB);
+        setLayoutWeight(mSovereignRowB, 1.0f, ViewGroup.LayoutParams.MATCH_PARENT);
+        addDivider(stripView, mDividerViews.get(2));
+        stripView.addView(mSovereignEmojiView);
+        final ViewGroup.LayoutParams lp = mSovereignEmojiView.getLayoutParams();
+        if (lp instanceof final LinearLayout.LayoutParams llp) {
+            llp.weight = 0f;
+            llp.width = mSovereignEmojiSlotWidth;
+            llp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+        }
+        return Math.max(indexA, indexB) + 1;
+    }
+
+    private void setupSovereignWord(final Context context, final TextView wordView,
+            final SuggestedWords suggestedWords, final int index, final boolean showMoreHint) {
+        if (index >= 0) {
+            wordView.setTag(index);
+            wordView.setText(getStyledSuggestedWord(suggestedWords, index));
+            wordView.setTextColor(getSuggestionTextColor(suggestedWords, index));
+        } else {
+            wordView.setTag(null);
+            wordView.setText(null);
+        }
+        KeyboardTypeface.applyToTextView(wordView);
+        wordView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        wordView.setTextScaleX(1.0f);
+        wordView.setEllipsize(TextUtils.TruncateAt.END);
+        wordView.setMinWidth(0);
+        wordView.setMinimumWidth(0);
+        if (showMoreHint) {
+            wordView.setCompoundDrawablesWithIntrinsicBounds(null, null, null, mMoreSuggestionsHint);
+            // HACK: Align with other TextViews that have no compound drawables.
+            wordView.setCompoundDrawablePadding(-mMoreSuggestionsHint.getIntrinsicHeight());
+        } else {
+            wordView.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null);
+        }
+        final CharSequence word = wordView.getText();
+        wordView.setContentDescription(TextUtils.isEmpty(word)
+                ? context.getResources().getString(R.string.spoken_empty_suggestion) : word.toString());
+        wordView.setEnabled(!TextUtils.isEmpty(word)
+                || AccessibilityUtils.Companion.getInstance().isTouchExplorationEnabled());
+    }
+
     private void layoutDebugInfo(final int positionInStrip, final ViewGroup placerView,
             final int x) {
         final TextView debugInfoView = mDebugInfoViews.get(positionInStrip);
@@ -571,6 +709,7 @@ final class SuggestionStripLayoutHelper {
     private int layoutPunctuationsAndReturnStartIndexOfMoreSuggestions(
             final PunctuationSuggestions punctuationSuggestions, final ViewGroup stripView) {
         final int countInStrip = Math.min(punctuationSuggestions.size(), PUNCTUATIONS_IN_STRIP);
+        if (mSovereignRowB != null) mSovereignRowB.removeAllViews(); // SovereignBoard: free word B for the strip
         for (int positionInStrip = 0; positionInStrip < countInStrip; positionInStrip++) {
             if (positionInStrip != 0) {
                 // Add divider if this isn't the left most suggestion in suggestions strip.
@@ -585,6 +724,7 @@ final class SuggestionStripLayoutHelper {
             wordView.setText(punctuation);
             wordView.setContentDescription(punctuation);
             wordView.setTextScaleX(1.0f);
+            wordView.setGravity(Gravity.CENTER); // SovereignBoard: word slots are start-aligned
             wordView.setCompoundDrawables(null, null, null, null);
             wordView.setTextColor(mColorAutoCorrect);
             KeyboardTypeface.applyToTextView(wordView);
