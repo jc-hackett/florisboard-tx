@@ -35,7 +35,6 @@ import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.ToolbarKey
 import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.tx.ClipboardCheck // SovereignBoard:
-import helium314.keyboard.tx.DictationManager // SovereignBoard:
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -136,6 +135,14 @@ class ClipboardHistoryManager(
             ClipboardCheck.error(e)
         }
         ClipboardCheck.record(latinIME, source, clipData, outcome)
+    }
+
+    // SovereignBoard: put a dictation straight into history, without touching the system clipboard
+    //  (so Android shows no "copied" overlay). Follows the history setting; retention is applied by addClip.
+    fun addTextToHistory(text: String) {
+        if (!latinIME.mSettings.current.mClipboardHistoryEnabled || text.isEmpty()) return
+        if (clipboardDao == null) clipboardDao = ClipboardDao.getInstance(latinIME)
+        clipboardDao?.addClip(System.currentTimeMillis(), false, text)
     }
 
     fun getPrimaryClipIfText(): String? {
@@ -240,8 +247,6 @@ class ClipboardHistoryManager(
         if (parent == null) return null
         val clipData = clipboardManager.primaryClip ?: return null
         if (clipData.itemCount == 0) return null
-        // SovereignBoard: a dictation copy is already typed in; don't offer to paste it again
-        if (clipData.description?.label?.toString() == DictationManager.CLIP_LABEL) return null
         val clipItem = clipData.getItemAt(0) ?: return null
         val hasText = clipData.description?.hasMimeType("text/*") == true
         val hasImage = clipData.description?.hasMimeType("image/*") == true && clipItem.uri != null

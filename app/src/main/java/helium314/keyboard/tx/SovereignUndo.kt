@@ -111,11 +111,12 @@ object SovereignUndo {
         dictation.clear()
     }
 
-    /** Field changed or keyboard hidden: nothing stays on offer. */
+    /** Field changed or keyboard hidden: nothing stays on offer, and kept-dictation ids are dropped. */
     @JvmStatic
     fun forgetAll() {
         cleanup.clear()
         dictation.clear()
+        KeptDictations.forget()
     }
 
     fun snapshot(ic: InputConnection): EditorSnapshot? {
@@ -135,3 +136,43 @@ object SovereignUndo {
 
 /** A cleanup that can be undone: [cleaned] was written at [start] in place of [original]. */
 internal data class CleanupDone(val start: Int, val cleaned: String, val original: String)
+
+/**
+ * The last few dictations typed into the current field whose recordings the server kept ("Save my
+ * recordings" on): the server's id and the text typed in. When the user then cleans up text with ✨,
+ * the ids whose dictation is in that text go with the request, so the server can keep the
+ * correction next to the recording. Forgotten when the field changes or the keyboard hides.
+ */
+object KeptDictations {
+    private const val MAX = 5
+    private val items = ArrayDeque<Pair<String, String>>()
+
+    @Synchronized
+    fun remember(id: String, text: String) {
+        items.removeAll { it.first == id }
+        items.addLast(id to text)
+        while (items.size > MAX) items.removeFirst()
+    }
+
+    @Synchronized
+    fun forget() = items.clear()
+
+    /**
+     * Ids of remembered dictations that are (mostly) in [text]: at least half of the dictated words
+     * still appear there, so a dictation the user since corrected a little still counts.
+     */
+    @Synchronized
+    fun idsFor(text: String): List<String> {
+        if (items.isEmpty()) return emptyList()
+        val present = words(text).toHashSet()
+        return items.filter { (_, said) ->
+            val w = words(said)
+            w.isNotEmpty() && w.count { it in present } * 2 >= w.size
+        }.map { it.first }
+    }
+
+    private fun words(s: String): List<String> =
+        s.lowercase().split(NON_WORD).filter { it.isNotEmpty() }
+
+    private val NON_WORD = Regex("[^\\p{L}\\p{N}']+")
+}

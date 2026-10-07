@@ -62,7 +62,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var token by remember { mutableStateOf(settings.token) }
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
-    var copyDictation by remember { mutableStateOf(settings.copyToClipboard) }
+    var copyDictation by remember { mutableStateOf(settings.addToClipboardHistory) }
     var micGranted by remember { mutableStateOf(hasMic(ctx)) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micGranted = granted || hasMic(ctx)
@@ -121,13 +121,14 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var keepBusy by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    fun recordingsText(n: Int) = if (n == 1) "1 recording saved" else "$n recordings saved"
+    fun keptText(n: Int, fixes: Int) =
+        "${if (n == 1) "1 recording" else "$n recordings"} · ${if (fixes == 1) "1 fix" else "$fixes fixes"} saved"
 
     fun refreshKept() {
         if (settings.token.isBlank()) { keptStatus = ""; return }
         scope.launch {
             keptStatus = try {
-                recordingsText(KeptRecordings.count(ctx))
+                KeptRecordings.count(ctx).let { (n, fixes) -> keptText(n, fixes) }
             } catch (e: DictationException) {
                 "Couldn't check saved recordings: ${e.userMessage}"
             }
@@ -141,8 +142,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         scope.launch {
             try {
                 val n = KeptRecordings.deleteAll(ctx)
-                keptStatus = if (n == 1) "Deleted 1 recording. 0 recordings saved."
-                    else "Deleted $n recordings. 0 recordings saved."
+                keptStatus = if (n == 1) "Deleted 1 recording. ${keptText(0, 0)}."
+                    else "Deleted $n recordings. ${keptText(0, 0)}."
             } catch (e: DictationException) {
                 keptStatus = "Couldn't delete: ${e.userMessage}"
             } finally {
@@ -247,16 +248,16 @@ fun SovereignScreen(onClickBack: () -> Unit) {
 
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
-                        Text("Copy dictation to clipboard", style = MaterialTheme.typography.bodyLarge)
+                        Text("Add dictation to clipboard history", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Each dictation also goes on the clipboard, so it shows in clipboard history. " +
-                                "Never in password fields or incognito mode.",
+                            "Each dictation is also added to the keyboard's clipboard history, without " +
+                                "copying it. Never in password fields or incognito mode.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                     Switch(
                         checked = copyDictation,
-                        onCheckedChange = { copyDictation = it; settings.copyToClipboard = it },
+                        onCheckedChange = { copyDictation = it; settings.addToClipboardHistory = it },
                     )
                 }
 

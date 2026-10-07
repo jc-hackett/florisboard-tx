@@ -2,15 +2,11 @@
 // SovereignBoard: ported from florisboard-tx (feat/dictate). Same gestures and guardrails.
 package helium314.keyboard.tx
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.inputmethodservice.InputMethodService
-import android.os.Build
-import android.os.PersistableBundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.InputTypeUtils
 import kotlinx.coroutines.CancellationException
@@ -112,7 +108,7 @@ class DictationManager(private val ime: InputMethodService) {
                 delay(MAX_SESSION_MS)
                 capturing = false
             }
-            val text = try {
+            val result = try {
                 transcriber.transcribe(stillRecording = { capturing })
             } catch (e: CancellationException) {
                 throw e
@@ -129,6 +125,7 @@ class DictationManager(private val ime: InputMethodService) {
                 return@launch
             }
             _state.value = DictationState.WORKING
+            val text = result?.text
             if (!text.isNullOrBlank()) {
                 withContext(Dispatchers.Main) {
                     val ic = ime.currentInputConnection
@@ -140,7 +137,8 @@ class DictationManager(private val ime: InputMethodService) {
                         val at = SovereignUndo.snapshot(ic)?.let { minOf(it.selStart, it.selEnd) }
                         ic.commitText(text, 1)
                         if (at != null) SovereignUndo.dictation.offer(text, at + text.length, at + text.length)
-                        copyToClipboard(text)
+                        result?.keepId?.let { KeptDictations.remember(it, text) }
+                        addToClipboardHistory(text)
                     }
                 }
             }
@@ -149,23 +147,18 @@ class DictationManager(private val ime: InputMethodService) {
     }
 
     /**
-     * Also puts the dictated text on the clipboard, so it lands in clipboard history (switch in the
-     * SovereignBoard settings, on by default). Never in password fields or incognito mode. Marked not
-     * sensitive, so Android 13+ shows the text in its overlay instead of hiding it.
+     * Also adds the dictated text to the keyboard's own clipboard history (switch in the SovereignBoard
+     * settings, on by default). The system clipboard is left alone, so Android shows no "copied"
+     * overlay. Never in password fields or incognito mode; follows the history on/off setting and
+     * its retention time.
      */
-    private fun copyToClipboard(text: String) {
-        if (text.isEmpty() || !DictationSettings(appContext).copyToClipboard) return
+    private fun addToClipboardHistory(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || !DictationSettings(appContext).addToClipboardHistory) return
         if (Settings.getValues().mIncognitoModeEnabled) return
         val inputType = ime.currentInputEditorInfo?.inputType ?: 0
         if (InputTypeUtils.isAnyPasswordInputType(inputType)) return
-        val clipboard = appContext.getSystemService(ClipboardManager::class.java) ?: return
-        val clip = ClipData.newPlainText(CLIP_LABEL, text)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            clip.description.extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false)
-            }
-        }
-        runCatching { clipboard.setPrimaryClip(clip) }
+        runCatching { (ime as? LatinIME)?.clipboardHistoryManager?.addTextToHistory(trimmed) }
     }
 
     /**
@@ -207,9 +200,6 @@ class DictationManager(private val ime: InputMethodService) {
     }
 
     companion object {
-        /** Label on clips made from a dictation (the clipboard suggestion chip skips these). */
-        const val CLIP_LABEL = "Dictation"
-
         private val sharedState = MutableStateFlow(DictationState.IDLE)
 
         /** What dictation is doing right now, for whoever draws the mic key. */

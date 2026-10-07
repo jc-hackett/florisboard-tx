@@ -31,13 +31,19 @@ import java.net.URLEncoder
 /** A dictation failure with a message fit to show the user in a toast. */
 class DictationException(val userMessage: String) : Exception(userMessage)
 
+/**
+ * One finished dictation: the [text] to type in, and [keepId], the server's id for the saved
+ * recording when "Save my recordings" is on (null otherwise).
+ */
+data class Transcript(val text: String, val keepId: String? = null)
+
 /** Turns captured speech into text ready to be committed to the editor. */
 interface Transcriber {
     /**
      * Captures audio until [stillRecording] returns false, then returns the finished text, or null
      * if nothing usable was said. Throws [DictationException] with a user-facing message on failure.
      */
-    suspend fun transcribe(stillRecording: () -> Boolean): String?
+    suspend fun transcribe(stillRecording: () -> Boolean): Transcript?
 }
 
 /**
@@ -47,7 +53,7 @@ interface Transcriber {
 class ServerTranscriber(context: Context) : Transcriber {
     private val appContext = context.applicationContext
 
-    override suspend fun transcribe(stillRecording: () -> Boolean): String? {
+    override suspend fun transcribe(stillRecording: () -> Boolean): Transcript? {
         val settings = DictationSettings(appContext)
         val server = settings.serverUrl
         val token = settings.token
@@ -123,7 +129,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         words: List<String>,
         keep: Boolean,
         chunks: ReceiveChannel<ByteArray>,
-    ): String? {
+    ): Transcript? {
         val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
@@ -159,8 +165,11 @@ class ServerTranscriber(context: Context) : Transcriber {
             if (code !in 200..299) throw DictationException(DictationMessages.SERVER)
             SovereignToken.onAccepted(appContext)
             val json = conn.inputStream.bufferedReader().use { it.readText() }
-            val text = JSONObject(json).optString("text").trim()
-            return if (text.isEmpty()) null else "$text "
+            val reply = JSONObject(json)
+            val text = reply.optString("text").trim()
+            // Only sent back when the server kept this recording (opt-in): its id, for fix labels.
+            val keepId = reply.optString("keep_id").takeIf { keep && KEEP_ID.matches(it) }
+            return if (text.isEmpty()) null else Transcript("$text ", keepId)
         } catch (e: DictationException) {
             throw e
         } catch (e: CancellationException) {
@@ -188,6 +197,8 @@ class ServerTranscriber(context: Context) : Transcriber {
         /** Short on purpose: the server normally answers well under a second after release. */
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val READ_TIMEOUT_MS = 8_000
+        /** Shape of a kept recording's id (the server checks it again). */
+        val KEEP_ID = Regex("""^\d{8}T\d{6}Z-[0-9a-f]{8}-\d+(\.\d)?s$""")
     }
 }
 
@@ -196,8 +207,9 @@ class ServerTranscriber(context: Context) : Transcriber {
  * deleting them all. Both throw [DictationException] with a user-facing message on failure.
  */
 object KeptRecordings {
-    /** Number of kept recordings. */
-    suspend fun count(context: Context): Int = call(context, "GET").optInt("count", 0)
+    /** Number of kept recordings, and of corrections (fixes) kept with them. */
+    suspend fun count(context: Context): Pair<Int, Int> =
+        call(context, "GET").let { it.optInt("count", 0) to it.optInt("fixes", 0) }
 
     /** Deletes every kept recording; returns how many were deleted. */
     suspend fun deleteAll(context: Context): Int = call(context, "DELETE").optInt("deleted", 0)

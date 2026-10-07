@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
+import helium314.keyboard.latin.BuildConfig
 import helium314.keyboard.latin.LatinIME
 import helium314.keyboard.latin.utils.InputTypeUtils
 import kotlinx.coroutines.CoroutineScope
@@ -65,10 +66,13 @@ class AiCleanup private constructor(context: Context) {
             return toast("AI cleanup: that's too long (about 300 words at most). Select a part and tap again.")
         }
 
+        val refs = fixRefs(settings, original)
         _busy.value = true
         scope.launch {
             try {
-                val cleaned = withContext(Dispatchers.IO) { request(settings.serverUrl, settings.token, original) }
+                val cleaned = withContext(Dispatchers.IO) {
+                    request(settings.serverUrl, settings.token, original, refs, FIX_KIND_MANUAL)
+                }
                 if (cleaned == null || cleaned == original) {
                     toast("AI cleanup: nothing to change")
                     return@launch
@@ -137,10 +141,13 @@ class AiCleanup private constructor(context: Context) {
         while (start < end && full[start].isWhitespace()) start++
         val sentence = full.substring(start, end)
         if (sentence.length < 3) return
+        val refs = fixRefs(settings, sentence)
 
         scope.launch {
             val cleaned = try {
-                withContext(Dispatchers.IO) { request(settings.serverUrl, settings.token, sentence) }?.trim()
+                withContext(Dispatchers.IO) {
+                    request(settings.serverUrl, settings.token, sentence, refs, FIX_KIND_AUTO)
+                }?.trim()
             } catch (_: Exception) {
                 return@launch
             } ?: return@launch
@@ -174,7 +181,14 @@ class AiCleanup private constructor(context: Context) {
         }
     }
 
-    private fun request(server: String, token: String, text: String): String? {
+    /**
+     * Kept dictations in [text] (see [KeptDictations]), so the server can keep this correction with
+     * their recordings. Empty unless "Save my recordings" is on.
+     */
+    private fun fixRefs(settings: DictationSettings, text: String): List<String> =
+        if (settings.keepRecordings) KeptDictations.idsFor(text) else emptyList()
+
+    private fun request(server: String, token: String, text: String, refs: List<String>, kind: String): String? {
         val conn = (URL(server.trimEnd('/') + "/v1/tidy").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
@@ -182,6 +196,13 @@ class AiCleanup private constructor(context: Context) {
             readTimeout = 20_000
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Content-Type", "application/json")
+            // Opt-in only ("Save my recordings"): without these the server keeps nothing.
+            if (refs.isNotEmpty()) {
+                setRequestProperty("X-Dictate-Keep", "1")
+                setRequestProperty("X-Dictate-Keep-Ref", refs.joinToString(","))
+                setRequestProperty("X-Dictate-Fix-Kind", kind)
+                setRequestProperty("X-Dictate-App", BuildConfig.BUILD_COMMIT_HASH.take(12))
+            }
         }
         try {
             conn.outputStream.use { it.write(JSONObject().put("text", text).toString().toByteArray()) }
@@ -252,6 +273,8 @@ class AiCleanup private constructor(context: Context) {
         private const val MAX_CHARS = 6000
         /** Must match the server's TIDY_MAX_CHARS. */
         private const val SEND_MAX = 2000
+        private const val FIX_KIND_MANUAL = "sparkle"
+        private const val FIX_KIND_AUTO = "auto-sparkle"
 
         /** Marks that end a stretch worth cleaning when followed by a space (commas left out on
          *  purpose: half-sentences clean badly and would use up the per-minute limit). */

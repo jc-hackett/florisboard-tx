@@ -34,8 +34,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_CLEANUP, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CLEANUP, value).apply()
 
-    /** Also put each dictation on the clipboard, so it lands in clipboard history. */
-    var copyToClipboard: Boolean
+    /**
+     * Also add each dictation to the keyboard's own clipboard history (not the system clipboard).
+     * Same stored key as the old "copy dictation to clipboard" switch, so the user's choice carries over.
+     */
+    var addToClipboardHistory: Boolean
         get() = prefs.getBoolean(KEY_COPY_TO_CLIPBOARD, true)
         set(value) = prefs.edit().putBoolean(KEY_COPY_TO_CLIPBOARD, value).apply()
 
