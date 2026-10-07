@@ -11,7 +11,14 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -52,6 +59,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import helium314.keyboard.settings.DropDownField
+import helium314.keyboard.settings.dialogs.ColorPickerDialog
 import helium314.keyboard.settings.SearchSettingsScreen
 import helium314.keyboard.latin.utils.prefs
 import kotlinx.coroutines.launch
@@ -422,6 +430,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     onSelected = { clipSecond = it; SovereignClipboardPopup.setSecond(prefs, it) },
                 ) { Text(SovereignClipboardPopup.label(ctx, it)) }
 
+                SovereignColours()
+
                 Text("Microphone", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (micGranted) "Microphone permission: granted"
@@ -440,6 +450,85 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                 ) { Text("Open app permissions") }
             }
         }
+    }
+}
+
+/**
+ * "Colours": the Enter key (the SovereignBoard theme's accent, which the swipe trail follows too) and
+ * the pinned hotkey icons (clipboard, ✨, fact check, mic, and the clipboard bubble), which follow the
+ * Enter colour until given their own.
+ */
+@Composable
+private fun SovereignColours() {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.prefs() }
+    var enter by remember { mutableStateOf(SovereignTheme.enterColor(prefs)) }
+    var hotkey by remember { mutableStateOf(SovereignTheme.hotkeyColor(prefs)) }
+    var ownHotkey by remember { mutableStateOf(SovereignTheme.hasOwnHotkeyColor(prefs)) }
+    var picking by remember { mutableStateOf<String?>(null) }
+
+    Text("Colours", style = MaterialTheme.typography.titleMedium)
+    ColourRow("Enter key", "The bold colour of the Enter key and the swipe trail (SovereignBoard colour theme).", enter) {
+        picking = "enter"
+    }
+    ColourRow(
+        "Hotkey icons",
+        "Clipboard, ✨, fact check and mic in the strip, and the clipboard bubble. " +
+            if (ownHotkey) "Own colour." else "Same as the Enter key until you change it.",
+        hotkey,
+    ) { picking = "hotkey" }
+
+    when (picking) {
+        "enter" -> ColorPickerDialog(
+            onDismissRequest = { picking = null },
+            initialColor = enter,
+            title = "Enter key",
+            showDefault = enter != SovereignTheme.ENTER,
+            onDefault = {
+                SovereignTheme.setEnterColor(prefs, SovereignTheme.ENTER)
+                enter = SovereignTheme.ENTER
+                hotkey = SovereignTheme.hotkeyColor(prefs)
+            },
+            onConfirmed = {
+                SovereignTheme.setEnterColor(prefs, it)
+                enter = it
+                hotkey = SovereignTheme.hotkeyColor(prefs)
+            },
+        )
+        "hotkey" -> ColorPickerDialog(
+            onDismissRequest = { picking = null },
+            initialColor = hotkey,
+            title = "Hotkey icons",
+            showDefault = ownHotkey,
+            onDefault = {
+                SovereignTheme.setHotkeyColor(prefs, null)
+                ownHotkey = false
+                hotkey = SovereignTheme.hotkeyColor(prefs)
+            },
+            onConfirmed = {
+                SovereignTheme.setHotkeyColor(prefs, it)
+                ownHotkey = true
+                hotkey = it
+            },
+        )
+    }
+}
+
+@Composable
+private fun ColourRow(title: String, description: String, color: Int, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(description, style = MaterialTheme.typography.bodyMedium)
+        }
+        Box(
+            Modifier.padding(start = 12.dp).size(40.dp).clip(CircleShape)
+                .background(androidx.compose.ui.graphics.Color(color))
+                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+        )
     }
 }
 

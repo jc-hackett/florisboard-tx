@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import helium314.keyboard.keyboard.ColorSetting
+import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.KeyboardTheme
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.prefs
@@ -87,5 +88,6 @@ object SovereignTheme {
     /** [color] null: back to following the Enter colour. */
     fun setHotkeyColor(prefs: SharedPreferences, color: Int?) {
         prefs.edit { if (color == null) remove(PREF_HOTKEY_COLOR) else putInt(PREF_HOTKEY_COLOR, color) }
+        KeyboardSwitcher.getInstance().setThemeNeedsReload() // the strip is rebuilt, so every key redraws
     }
 }

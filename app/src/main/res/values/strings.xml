@@ -789,7 +789,8 @@ New dictionary:
     <!-- Selection: space bar text color. -->
     <string name="select_color_spacebar_text">Space bar text</string>
     <!-- Selection: accent color. -->
-    <string name="select_color_accent">Accent</string>
+    <!-- SovereignBoard: say what the accent colours, so it can be found -->
+    <string name="select_color_accent">Accent (Enter key, swipe trail)</string>
     <!-- Selection: gesture color. -->
     <string name="select_color_gesture">Gesture input</string>
     <!-- Message displayed when clicking "load" button in color theme picker. "%s" will be replaced by discussion_section_link -->
