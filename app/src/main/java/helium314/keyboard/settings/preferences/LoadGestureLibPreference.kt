@@ -32,6 +32,18 @@ import helium314.keyboard.latin.utils.IntentUtils
 @Composable
 fun LoadGestureLibPreference(setting: Setting) {
     var showDialog by rememberSaveable { mutableStateOf(false) }
+    Preference(
+        name = setting.title,
+        onClick = { showDialog = true }
+    )
+    GestureLibLoader(showDialog) { showDialog = false }
+}
+
+// SovereignBoard: the dialogs and file picker split out of LoadGestureLibPreference, so the SovereignBoard
+//  screen's "Glide typing" section can start the same flow (same checksum check) from its own button.
+@SuppressLint("ApplySharedPref")
+@Composable
+fun GestureLibLoader(showDialog: Boolean, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val prefs = ctx.protectedPrefs()
     val abi = Build.SUPPORTED_ABIS[0]
@@ -71,15 +83,11 @@ fun LoadGestureLibPreference(setting: Setting) {
             // should inform user, but probably the issues will only come when reading the library
         }
     }
-    Preference(
-        name = setting.title,
-        onClick = { showDialog = true }
-    )
     if (showDialog) {
         ConfirmationDialog(
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = onDismiss,
             onConfirmed = {
-                showDialog = false
+                onDismiss()
                 val intent = IntentUtils.getResolvableTypeIntent(ctx, "application/octet-stream")
                     .setAction(Intent.ACTION_OPEN_DOCUMENT)
                 launcher.launch(intent)

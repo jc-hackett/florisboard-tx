@@ -60,6 +60,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import helium314.keyboard.settings.DropDownField
 import helium314.keyboard.settings.dialogs.ColorPickerDialog
+import helium314.keyboard.settings.SettingsDestination
+import helium314.keyboard.settings.preferences.GestureLibLoader
+import helium314.keyboard.latin.BuildConfig
+import helium314.keyboard.latin.settings.Defaults
+import helium314.keyboard.latin.utils.JniUtils
 import helium314.keyboard.settings.SearchSettingsScreen
 import helium314.keyboard.latin.utils.prefs
 import kotlinx.coroutines.launch
@@ -432,6 +437,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
 
                 SovereignColours()
 
+                GlideTyping()
+
                 Text("Microphone", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (micGranted) "Microphone permission: granted"
@@ -513,6 +520,75 @@ private fun SovereignColours() {
         )
     }
 }
+
+/**
+ * "Glide typing": HeliBoard can only glide-type with Google's gesture library, which we must not ship.
+ * Without it: three plain steps (where to get the file, load it with HeliBoard's own loader, switch it
+ * on). With it: a switch for gesture input.
+ */
+@Composable
+private fun GlideTyping() {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.prefs() }
+    val loaded = JniUtils.sHaveGestureLib
+    var gestureOn by remember {
+        mutableStateOf(prefs.getBoolean(helium314.keyboard.latin.settings.Settings.PREF_GESTURE_INPUT, Defaults.PREF_GESTURE_INPUT))
+    }
+    var showLoader by remember { mutableStateOf(false) }
+
+    Text("Glide typing", style = MaterialTheme.typography.titleMedium)
+    if (loaded) {
+        if (gestureOn) Text("Glide typing is on", color = androidx.compose.ui.graphics.Color(0xFF2E7D32), style = MaterialTheme.typography.bodyLarge)
+        else Text("The add-on is loaded; glide typing is switched off.", style = MaterialTheme.typography.bodyLarge)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Glide typing", style = MaterialTheme.typography.bodyLarge)
+                Text("Slide your finger across the letters to type a word.", style = MaterialTheme.typography.bodyMedium)
+            }
+            Switch(
+                checked = gestureOn,
+                onCheckedChange = {
+                    gestureOn = it
+                    prefs.edit().putBoolean(helium314.keyboard.latin.settings.Settings.PREF_GESTURE_INPUT, it).apply()
+                },
+            )
+        }
+        return
+    }
+    Text("Glide typing needs a one-time add-on", style = MaterialTheme.typography.bodyLarge)
+    if (BuildConfig.BUILD_TYPE == "nouserlib") {
+        Text("This version of the keyboard can't load the add-on.", style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    Text(
+        "1. Get the add-on file (libjni_latinimegoogle.so). It comes from Google, so we can't include it; " +
+            "HeliBoard's help page says where to find it.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GESTURE_LIBRARY_HELP))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("How to get it") }
+    Text("2. Load the file. The keyboard checks it and restarts.", style = MaterialTheme.typography.bodyMedium)
+    OutlinedButton(onClick = { showLoader = true }, modifier = Modifier.fillMaxWidth()) { Text("Load the add-on file") }
+    GestureLibLoader(showLoader) { showLoader = false }
+    Text("3. Then turn on Gesture typing.", style = MaterialTheme.typography.bodyMedium)
+    OutlinedButton(
+        onClick = {
+            prefs.edit().putBoolean(helium314.keyboard.latin.settings.Settings.PREF_GESTURE_INPUT, true).apply()
+            SettingsDestination.navigateTo(SettingsDestination.GestureTyping)
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Gesture typing settings") }
+}
+
+/** HeliBoard's own help on getting the gesture typing library (its wiki FAQ). */
+private const val GESTURE_LIBRARY_HELP = "https://github.com/HeliBorg/HeliBoard/wiki/FAQ#how-to-enable-glide-typing"
 
 @Composable
 private fun ColourRow(title: String, description: String, color: Int, onClick: () -> Unit) {
