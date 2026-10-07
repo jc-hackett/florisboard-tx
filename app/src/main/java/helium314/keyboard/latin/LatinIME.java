@@ -98,6 +98,7 @@ import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import helium314.keyboard.tx.EditorSnapshot; // SovereignBoard:
 import helium314.keyboard.tx.SovereignAddWord; // SovereignBoard:
 import helium314.keyboard.tx.SovereignToken; // SovereignBoard:
+import helium314.keyboard.tx.SovereignScreenshots; // SovereignBoard:
 import helium314.keyboard.tx.SovereignUndo; // SovereignBoard:
 import kotlin.Unit;
 
@@ -884,6 +885,7 @@ public class LatinIME extends InputMethodService implements
         setGestureDataGatheringMode(editorInfo, restarting);
         if (restarting) SovereignToken.checkIfDue(this); // SovereignBoard: light token check, at most hourly
         else SovereignToken.onKeyboardOpened(this); // SovereignBoard: same, plus token-changed note and update check
+        if (!restarting) SovereignScreenshots.onKeyboardShown(this); // SovereignBoard: recent screenshot chip
         mClipboardHistoryManager.onKeyboardShown(); // SovereignBoard: catch clips the change listener missed
 
         mDictionaryFacilitator.onStartInput();
@@ -1639,6 +1641,8 @@ public class LatinIME extends InputMethodService implements
     public boolean tryShowClipboardSuggestion() {
         if (!hasSuggestionStripView()) return false;
         View clipboardView = mClipboardHistoryManager.getClipboardSuggestionView(getCurrentInputEditorInfo(), mSuggestionStripView);
+        if (clipboardView == null) // SovereignBoard: else a recent screenshot
+            clipboardView = SovereignScreenshots.suggestionView(this, mSuggestionStripView);
         if (clipboardView != null) {
             mSuggestionStripView.setExternalSuggestionView(clipboardView, false);
             return true;

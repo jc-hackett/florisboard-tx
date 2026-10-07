@@ -60,6 +60,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_TOKEN_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_TOKEN_CHECK, value).apply()
 
+    /** Offer the newest screenshot (under 3 minutes old) as a chip in the suggestion strip. */
+    var offerScreenshots: Boolean
+        get() = prefs.getBoolean(KEY_OFFER_SCREENSHOTS, true)
+        set(value) = prefs.edit().putBoolean(KEY_OFFER_SCREENSHOTS, value).apply()
+
     /** A changed token checked out; the keyboard says so once, the next time it opens. */
     var tokenChangedPending: Boolean
         get() = prefs.getBoolean(KEY_TOKEN_CHANGED_PENDING, false)
@@ -77,6 +82,7 @@ class DictationSettings(context: Context) {
     companion object {
         private const val FILE = "dictation"
         private const val KEY_TOKEN_CHANGED_PENDING = "token_changed_pending"
+        private const val KEY_OFFER_SCREENSHOTS = "offer_screenshots"
         private const val KEY_UPDATE_BUILD = "update_build"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         private const val KEY_TOKEN_REJECTED = "token_rejected"

@@ -65,6 +65,11 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var copyDictation by remember { mutableStateOf(settings.addToClipboardHistory) }
+    var offerShots by remember { mutableStateOf(settings.offerScreenshots) }
+    var shotAccess by remember { mutableStateOf(screenshotAccessText(ctx)) }
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        shotAccess = screenshotAccessText(ctx)
+    }
     var micGranted by remember { mutableStateOf(hasMic(ctx)) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micGranted = granted || hasMic(ctx)
@@ -308,6 +313,33 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     )
                 }
 
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Offer recent screenshots", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "A screenshot taken in the last 3 minutes shows above the keys; tap to paste it. " +
+                                "Needs photo access. " + shotAccess,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = offerShots,
+                        onCheckedChange = {
+                            offerShots = it
+                            settings.offerScreenshots = it
+                            if (it && !SovereignScreenshots.hasFullAccess(ctx)) {
+                                photoLauncher.launch(SovereignScreenshots.permissionsToRequest())
+                            }
+                        },
+                    )
+                }
+                if (offerShots && !SovereignScreenshots.hasFullAccess(ctx)) {
+                    OutlinedButton(
+                        onClick = { photoLauncher.launch(SovereignScreenshots.permissionsToRequest()) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Allow photo access") }
+                }
+
                 // Clipboard check: what happened to the last copy (privacy-safe, see ClipboardCheck)
                 Text("Clipboard check", style = MaterialTheme.typography.titleMedium)
                 var clipCheck by remember { mutableStateOf(ClipboardCheck.summary(ctx)) }
@@ -406,3 +438,11 @@ private fun clipboardToken(context: Context): String? = runCatching {
 }.getOrNull()
 
 private val TOKEN_SHAPE = Regex("^dt_[A-Za-z0-9_-]{20,}$")
+
+/** One line on photo access for the screenshot offer. */
+private fun screenshotAccessText(context: Context): String = when {
+    SovereignScreenshots.hasFullAccess(context) -> "Photo access: allowed."
+    SovereignScreenshots.hasPartialAccess(context) ->
+        "Photo access: selected photos only, so only screenshots you picked can be offered."
+    else -> "Photo access: not allowed, so nothing is offered."
+}
