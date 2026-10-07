@@ -80,8 +80,10 @@ object SovereignClipboardPopup {
         for (key in listOf(first(prefs), second(prefs))) {
             val button = ImageButton(context, null, R.attr.suggestionWordStyle).apply {
                 scaleType = ImageView.ScaleType.CENTER
-                setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, context))
-                colors.setColor(this, ColorType.TOOL_BAR_KEY)
+                // the same tint as the pinned strip icons (SovereignBoard settings, Colours)
+                setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, context)?.mutate()?.apply {
+                    setTintList(android.content.res.ColorStateList.valueOf(SovereignTheme.hotkeyColor(prefs)))
+                })
                 colors.setBackground(this, ColorType.STRIP_BACKGROUND)
                 contentDescription = label(context, key)
                 setOnClickListener {

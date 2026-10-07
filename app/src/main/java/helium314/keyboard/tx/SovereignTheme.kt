@@ -3,17 +3,21 @@
 // stored as a HeliBoard user colour theme so it can still be changed in Settings > Appearance.
 package helium314.keyboard.tx
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import helium314.keyboard.keyboard.ColorSetting
 import helium314.keyboard.keyboard.KeyboardTheme
 import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.prefs
 import kotlinx.serialization.json.Json
 
 object SovereignTheme {
     /** Name of the user colour theme, as shown in the colours settings. */
     const val THEME_NAME = "SovereignBoard"
     private const val PREF_MIGRATED = "sovereign_pink_theme_v1"
+    /** Tint of the pinned strip icons and the clipboard popup's icons; unset = follow the Enter colour. */
+    private const val PREF_HOTKEY_COLOR = "sovereign_hotkey_color"
 
     const val BACKGROUND = 0xFFEEF0F3.toInt() // Gboard-like light grey
     const val KEYS = 0xFFFFFFFF.toInt() // white letter keys
@@ -49,5 +53,39 @@ object SovereignTheme {
             putBoolean(Settings.PREF_THEME_KEY_BORDERS, true)
             putBoolean(PREF_MIGRATED, true)
         }
+    }
+
+    /** The SovereignBoard theme's accent: the Enter key (and the swipe trail, which follows the accent). */
+    fun enterColor(prefs: SharedPreferences): Int {
+        val json = prefs.getString(Settings.PREF_USER_COLORS_PREFIX + THEME_NAME, null) ?: return ENTER
+        cachedEnter?.let { (j, c) -> if (j == json) return c }
+        val color = runCatching {
+            KeyboardTheme.readUserColors(prefs, THEME_NAME).firstOrNull { it.name == KeyboardTheme.COLOR_ACCENT }?.color
+        }.getOrNull() ?: ENTER
+        cachedEnter = json to color
+        return color
+    }
+    @Volatile private var cachedEnter: Pair<String, Int>? = null // the strip asks often; parse only on change
+
+    /** Sets the SovereignBoard theme's accent (the keyboard reloads its theme). */
+    fun setEnterColor(prefs: SharedPreferences, color: Int) {
+        val current = runCatching { KeyboardTheme.readUserColors(prefs, THEME_NAME) }.getOrNull() ?: colors
+        val updated = current.filterNot { it.name == KeyboardTheme.COLOR_ACCENT } +
+            ColorSetting(KeyboardTheme.COLOR_ACCENT, false, color)
+        KeyboardTheme.writeUserColors(prefs, THEME_NAME, updated)
+    }
+
+    /** Whether the user picked their own hotkey icon colour (else it follows the Enter colour). */
+    fun hasOwnHotkeyColor(prefs: SharedPreferences) = prefs.contains(PREF_HOTKEY_COLOR)
+
+    /** Tint for the pinned strip icons (clipboard, ✨, fact check, mic) and the clipboard popup's icons. */
+    fun hotkeyColor(prefs: SharedPreferences): Int =
+        if (prefs.contains(PREF_HOTKEY_COLOR)) prefs.getInt(PREF_HOTKEY_COLOR, ENTER) else enterColor(prefs)
+
+    fun hotkeyColor(context: Context): Int = hotkeyColor(context.prefs())
+
+    /** [color] null: back to following the Enter colour. */
+    fun setHotkeyColor(prefs: SharedPreferences, color: Int?) {
+        prefs.edit { if (color == null) remove(PREF_HOTKEY_COLOR) else putInt(PREF_HOTKEY_COLOR, color) }
     }
 }

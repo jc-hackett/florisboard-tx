@@ -49,8 +49,8 @@ object SovereignToolbar {
     private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
     private const val PREF_SPARKLE_BEFORE_MIC_MIGRATED = "sovereign_pinned_sparkle_before_mic_v1"
     private const val PREF_FACT_CHECK_MIGRATED = "sovereign_pinned_fact_check_v1"
-    /** Clipboard key icon: the theme's accent (crown red #D81B3C), no badge behind it. */
-    private const val CLIPBOARD_TINT = SovereignTheme.ENTER
+    /** The strip's own background for each key, put back when ✨ leaves its undo state. */
+    private val plainBackground = WeakHashMap<ImageButton, Drawable?>()
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -92,39 +92,42 @@ object SovereignToolbar {
     private val drawn = WeakHashMap<ImageButton, Any>()
 
     private fun apply(groups: List<ViewGroup>, look: Look, force: Boolean) {
+        // the icons' tint (chosen in SovereignBoard settings); part of each key's look so a change redraws it
+        val tint = groups.firstOrNull()?.let { SovereignTheme.hotkeyColor(it.context) } ?: SovereignTheme.ENTER
         val micDot = when (look.mic) {
             DictationState.RECORDING -> GREEN
             DictationState.WORKING -> GREY
             else -> null
         }
-        val micLook = Pair(micDot, look.mic == DictationState.RECORDING)
-        val sparkleLook: Any = if (look.undo && !look.busy) "undo" else look.busy
+        val micLook = Triple(micDot, look.mic == DictationState.RECORDING, tint)
+        val sparkleLook: Any = if (look.undo && !look.busy) "undo" else Pair(look.busy, tint)
         for (group in groups) {
             for (i in 0 until group.childCount) {
                 val button = group.getChildAt(i) as? ImageButton ?: continue
                 when (button.tag) {
                     ToolbarKey.CLIPBOARD -> {
-                        if (!force && drawn[button] == "clip") continue
-                        decorateClipboard(button)
-                        drawn[button] = "clip"
+                        val clipLook = "clip" to tint
+                        if (!force && drawn[button] == clipLook) continue
+                        decorate(button, ToolbarKey.CLIPBOARD, null, tint)
+                        drawn[button] = clipLook
                     }
                     ToolbarKey.VOICE -> {
                         if (!force && drawn[button] == micLook) continue
                         // the grey "waiting for the server" dot breathes; the green recording dot stays steady
-                        decorate(button, ToolbarKey.VOICE, micDot, strong = micLook.second, pulse = look.mic == DictationState.WORKING)
+                        decorate(button, ToolbarKey.VOICE, micDot, tint, pulse = look.mic == DictationState.WORKING)
                         drawn[button] = micLook
                     }
                     ToolbarKey.FACT_CHECK -> {
-                        val factLook = "fact" to look.checking
+                        val factLook = Triple("fact", look.checking, tint)
                         if (!force && drawn[button] == factLook) continue
-                        // the pink badge like ✨; a grey breathing dot while the check runs
-                        decorate(button, ToolbarKey.FACT_CHECK, if (look.checking) GREY else null, strong = look.checking, pulse = look.checking)
+                        // a grey breathing dot while the check runs
+                        decorate(button, ToolbarKey.FACT_CHECK, if (look.checking) GREY else null, tint, pulse = look.checking)
                         drawn[button] = factLook
                     }
                     ToolbarKey.AI_CLEANUP -> {
                         if (!force && drawn[button] == sparkleLook) continue
                         if (sparkleLook == "undo") decorateUndo(button)
-                        else decorate(button, ToolbarKey.AI_CLEANUP, if (look.busy) GREY else null, strong = look.busy, pulse = look.busy)
+                        else decorate(button, ToolbarKey.AI_CLEANUP, if (look.busy) GREY else null, tint, pulse = look.busy)
                         drawn[button] = sparkleLook
                     }
                 }
@@ -132,41 +135,28 @@ object SovereignToolbar {
         }
     }
 
-    private fun decorate(button: ImageButton, key: ToolbarKey, dot: Int?, strong: Boolean, pulse: Boolean = false) {
-        val colors: Colors = Settings.getValues().mColors
-        button.setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, button.context))
-        colors.setColor(button, ColorType.TOOL_BAR_KEY)
-        if (dot != null) button.drawable?.let { button.setImageDrawable(DotDrawable(it, dot, pulse)) }
-        button.background = BadgeDrawable(badgeColor(colors, strong), badgeColor(colors, true))
+    /**
+     * A pinned key as a plain icon in [tint] on the strip (no round badge), with an optional status
+     * [dot] in its corner (breathing with [pulse]).
+     */
+    private fun decorate(button: ImageButton, key: ToolbarKey, dot: Int?, tint: Int, pulse: Boolean = false) {
+        if (button !in plainBackground) plainBackground[button] = button.background
+        val icon = KeyboardIconsSet.instance.getNewDrawable(key.name, button.context)?.mutate()
+        icon?.setTintList(ColorStateList.valueOf(tint))
+        button.setImageDrawable(if (icon != null && dot != null) DotDrawable(icon, dot, pulse) else icon)
+        button.background = plainBackground[button]
         if (key == ToolbarKey.AI_CLEANUP) button.contentDescription = sparkleDescription ?: button.contentDescription
-    }
-
-    /** Clipboard history key: its icon in the accent colour, on the plain strip (no round badge). */
-    private fun decorateClipboard(button: ImageButton) {
-        val icon = KeyboardIconsSet.instance.getNewDrawable(ToolbarKey.CLIPBOARD.name, button.context)?.mutate()
-        icon?.setTintList(ColorStateList.valueOf(CLIPBOARD_TINT))
-        button.setImageDrawable(icon)
     }
 
     /** ✨ in its undo state: HeliBoard's undo arrow in white on a red (Enter-key colour) badge. */
     private fun decorateUndo(button: ImageButton) {
+        if (button !in plainBackground) plainBackground[button] = button.background
         if (sparkleDescription == null) sparkleDescription = button.contentDescription
         val icon = KeyboardIconsSet.instance.getNewDrawable(ToolbarKey.UNDO.name, button.context)?.mutate()
         icon?.setTintList(ColorStateList.valueOf(Color.WHITE))
         button.setImageDrawable(icon)
         button.background = BadgeDrawable(UNDO_RED, brightenOrDarken(UNDO_RED, true))
         button.contentDescription = "Undo cleanup"
-    }
-
-    /**
-     * The round badge behind the mic and ✨, as in the FlorisBoard edition: the theme's function-key
-     * colour (light pink in the SovereignBoard theme), deeper while recording or working.
-     */
-    private fun badgeColor(colors: Colors, strong: Boolean): Int {
-        val functional = colors.get(ColorType.FUNCTIONAL_KEY_BACKGROUND) or 0xFF000000.toInt()
-        if (!strong) return functional
-        return if (functional == SovereignTheme.FUNCTIONAL_KEYS) SovereignTheme.FUNCTIONAL_KEYS_PRESSED
-        else brightenOrDarken(functional, true)
     }
 
     /**
