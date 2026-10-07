@@ -60,8 +60,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.min
 import androidx.core.view.isGone
+import androidx.core.view.isInvisible // SovereignBoard:
 import helium314.keyboard.latin.utils.onClickToolbarKey
 import helium314.keyboard.latin.utils.onLongClickToolbarKey
+import helium314.keyboard.tx.SovereignClipboardPopup // SovereignBoard:
 import helium314.keyboard.tx.SovereignToken // SovereignBoard:
 import helium314.keyboard.tx.SovereignToolbar // SovereignBoard:
 import kotlinx.coroutines.Dispatchers
@@ -144,7 +146,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24f)
         setTextColor(Settings.getValues().mColors.get(ColorType.KEY_TEXT))
         contentDescription = "Add to dictionary"
-        isVisible = false
+        isInvisible = true // SovereignBoard: keeps its place at the right edge of slot B, so word B never moves
         setOnClickListener {
             val word = addWordCandidate ?: return@setOnClickListener
             AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, this, HapticEvent.KEY_PRESS)
@@ -175,8 +177,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         }
     }
 
-    // SovereignBoard: word B and the "+" button share slot B, so "+" never moves word A
-    //  Taps on the empty part of slot B still go to word B.
+    // SovereignBoard: word B (centred) and the "+" button (fixed at the slot's right edge) share slot B,
+    //  so "+" never moves word A or word B. Taps on the empty part of slot B still go to word B.
     private val wordBRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         setOnClickListener { wordViews[1].let { if (it.isEnabled && it.tag is Int) it.performClick() } }
@@ -186,7 +188,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     /** SovereignBoard: show "+" for [word], or hide it (null). */
     fun setAddWord(word: String?) {
         addWordCandidate = word
-        addWordKey.isVisible = word != null
+        addWordKey.isInvisible = word == null
         addWordKey.contentDescription = if (word == null) "Add to dictionary" else "Add $word to dictionary"
         layoutHelper.refitSovereignWords() // SovereignBoard: word B gets the room "+" frees, or gives it back
     }
@@ -310,6 +312,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         }
 
         toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * direction
+        SovereignClipboardPopup.dismiss() // SovereignBoard:
         SovereignToolbar.refresh(listOf(toolbar, pinnedKeys)) // SovereignBoard:
     }
 
@@ -387,7 +390,14 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         super.onDetachedFromWindow()
         sovereignIndicatorJob?.cancel() // SovereignBoard:
         sovereignIndicatorJob = null // SovereignBoard:
+        SovereignClipboardPopup.dismiss() // SovereignBoard:
         dismissMoreSuggestionsPanel()
+    }
+
+    // SovereignBoard: keyboard hidden: close the clipboard bubble (the dot animation stops by itself)
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility != VISIBLE) SovereignClipboardPopup.dismiss()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -438,6 +448,15 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         if (view.tag == ToolbarKey.VOICE) {
             AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
             listener.onCodeInput(KeyCode.DICTATION_UNDO, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false)
+            return true
+        }
+        // SovereignBoard: long-press on the pinned clipboard key opens a bubble with two hotkeys (set in
+        //  SovereignBoard settings) instead of pasting
+        if (view.tag == ToolbarKey.CLIPBOARD && view.parent === pinnedKeys) {
+            AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
+            SovereignClipboardPopup.show(view) {
+                listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false)
+            }
             return true
         }
         if (view.tag is ToolbarKey) {

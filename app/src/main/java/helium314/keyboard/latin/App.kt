@@ -48,6 +48,7 @@ class App : Application() {
         SovereignToolbar.migrateStripCleanup(prefs()) // SovereignBoard: strip always up, no arrows, clipboard pinned once
         SovereignToolbar.migrateClipboardRetention(prefs()) // SovereignBoard: clipboard history 10 -> 60 minutes once
         SovereignToolbar.migrateToolbarNoClipboard(prefs()) // SovereignBoard: clipboard only pinned in the strip, not in the toolbar, once
+        SovereignToolbar.migrateSparkleBeforeMic(prefs()) // SovereignBoard: pinned keys clipboard, ✨, mic (mic at the edge) once
         SovereignTheme.migrate(prefs()) // SovereignBoard: pink day theme once
         SovereignToolbar.migrateEmojiKey(prefs()) // SovereignBoard: emoji key on the bottom row once
         if (BuildConfig.DEBUG) // do this on every debug apk start because we may work on adding a new toolbar key

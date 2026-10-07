@@ -512,12 +512,12 @@ final class SuggestionStripLayoutHelper {
     // SovereignBoard: the fixed three-slot strip. Left of the pinned keys: [word A][word B (+ "+")][emoji].
     //  A and B always get the same width (half of what the emoji slot leaves); the emoji slot is a fixed square.
     //  Slot widths never change; each word's text shrinks to fit its slot (18dp down to 10dp), "..." only below that.
-    //  No dividers; "+" sits right after word B's text, a spacer takes what is left of slot B.
+    //  No dividers; words are centred in their slots. "+" has a fixed place at the right edge of slot B (kept
+    //  even while hidden), and word B is centred in the rest of the slot, so neither ever moves.
     private ViewGroup mSovereignRowB;
     private View mSovereignAddWordView;
     private TextView mSovereignEmojiView;
     private int mSovereignEmojiSlotWidth;
-    private View mSovereignSpacer;
     private float mSovereignBaseTextSize;
     private float mSovereignMinTextSize;
 
@@ -528,8 +528,6 @@ final class SuggestionStripLayoutHelper {
         mSovereignAddWordView = addWordView;
         mSovereignEmojiView = emojiView;
         mSovereignEmojiSlotWidth = emojiSlotWidth;
-        mSovereignSpacer = new View(rowB.getContext());
-        mSovereignSpacer.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         mSovereignBaseTextSize = mWordViews.get(0).getTextSize();
         mSovereignMinTextSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, SOVEREIGN_MIN_TEXT_DP,
                 rowB.getResources().getDisplayMetrics());
@@ -537,7 +535,7 @@ final class SuggestionStripLayoutHelper {
             if (r - l != or - ol) v.post(this::refitSovereignWords);
         };
         mWordViews.get(0).addOnLayoutChangeListener(refit);
-        rowB.addOnLayoutChangeListener(refit);
+        mWordViews.get(1).addOnLayoutChangeListener(refit);
     }
 
     private static final float SOVEREIGN_MIN_TEXT_DP = 10f;
@@ -547,12 +545,8 @@ final class SuggestionStripLayoutHelper {
         if (mSovereignRowB == null || mWordViews.get(1).getParent() != mSovereignRowB) return;
         final TextView wordA = mWordViews.get(0);
         fitSovereignWord(wordA, wordA.getWidth());
-        final TextView wordB = mWordViews.get(1);
-        int widthB = mSovereignRowB.getWidth();
-        if (mSovereignAddWordView.getVisibility() != View.GONE)
-            widthB -= mSovereignAddWordView.getLayoutParams().width;
-        if (widthB > 0) wordB.setMaxWidth(widthB);
-        fitSovereignWord(wordB, widthB);
+        final TextView wordB = mWordViews.get(1); // its view already stops where the "+" place begins
+        fitSovereignWord(wordB, wordB.getWidth());
     }
 
     private void fitSovereignWord(final TextView view, final int outerWidth) {
@@ -644,13 +638,12 @@ final class SuggestionStripLayoutHelper {
         mSovereignRowB.removeAllViews();
         mSovereignRowB.addView(wordB);
         final ViewGroup.LayoutParams lpB = wordB.getLayoutParams();
-        if (lpB instanceof final LinearLayout.LayoutParams llpB) { // word B hugs its text so "+" follows it
-            llpB.weight = 0f;
-            llpB.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (lpB instanceof final LinearLayout.LayoutParams llpB) { // SovereignBoard: word B takes the slot up to the "+" place
+            llpB.weight = 1f;
+            llpB.width = 0;
             llpB.height = ViewGroup.LayoutParams.MATCH_PARENT;
         }
         mSovereignRowB.addView(mSovereignAddWordView);
-        mSovereignRowB.addView(mSovereignSpacer);
         stripView.addView(mSovereignRowB);
         setLayoutWeight(mSovereignRowB, 1.0f, ViewGroup.LayoutParams.MATCH_PARENT);
         stripView.addView(mSovereignEmojiView);
@@ -675,7 +668,7 @@ final class SuggestionStripLayoutHelper {
             wordView.setText(null);
         }
         KeyboardTypeface.applyToTextView(wordView);
-        wordView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        wordView.setGravity(Gravity.CENTER); // SovereignBoard: words centred in their slots
         wordView.setTextScaleX(1.0f);
         wordView.setMaxWidth(Integer.MAX_VALUE);
         wordView.setEllipsize(TextUtils.TruncateAt.END);

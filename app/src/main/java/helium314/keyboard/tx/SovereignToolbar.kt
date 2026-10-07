@@ -11,6 +11,9 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
+import android.animation.ValueAnimator
+import android.os.Build
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
@@ -44,6 +47,9 @@ object SovereignToolbar {
     private const val PREF_CLIP_RETENTION_MIGRATED = "sovereign_clip_retention_60_v1"
     private const val PREF_EMOJI_KEY_MIGRATED = "sovereign_emoji_key_v1"
     private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
+    private const val PREF_SPARKLE_BEFORE_MIC_MIGRATED = "sovereign_pinned_sparkle_before_mic_v1"
+    /** Clipboard key icon: the theme's accent (crown red #D81B3C), no badge behind it. */
+    private const val CLIPBOARD_TINT = SovereignTheme.ENTER
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
     private val TRIMMED = listOf(
@@ -95,15 +101,21 @@ object SovereignToolbar {
             for (i in 0 until group.childCount) {
                 val button = group.getChildAt(i) as? ImageButton ?: continue
                 when (button.tag) {
+                    ToolbarKey.CLIPBOARD -> {
+                        if (!force && drawn[button] == "clip") continue
+                        decorateClipboard(button)
+                        drawn[button] = "clip"
+                    }
                     ToolbarKey.VOICE -> {
                         if (!force && drawn[button] == micLook) continue
-                        decorate(button, ToolbarKey.VOICE, micDot, strong = micLook.second)
+                        // the grey "waiting for the server" dot breathes; the green recording dot stays steady
+                        decorate(button, ToolbarKey.VOICE, micDot, strong = micLook.second, pulse = look.mic == DictationState.WORKING)
                         drawn[button] = micLook
                     }
                     ToolbarKey.AI_CLEANUP -> {
                         if (!force && drawn[button] == sparkleLook) continue
                         if (sparkleLook == "undo") decorateUndo(button)
-                        else decorate(button, ToolbarKey.AI_CLEANUP, if (look.busy) GREY else null, strong = look.busy)
+                        else decorate(button, ToolbarKey.AI_CLEANUP, if (look.busy) GREY else null, strong = look.busy, pulse = look.busy)
                         drawn[button] = sparkleLook
                     }
                 }
@@ -111,13 +123,20 @@ object SovereignToolbar {
         }
     }
 
-    private fun decorate(button: ImageButton, key: ToolbarKey, dot: Int?, strong: Boolean) {
+    private fun decorate(button: ImageButton, key: ToolbarKey, dot: Int?, strong: Boolean, pulse: Boolean = false) {
         val colors: Colors = Settings.getValues().mColors
         button.setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, button.context))
         colors.setColor(button, ColorType.TOOL_BAR_KEY)
-        if (dot != null) button.drawable?.let { button.setImageDrawable(DotDrawable(it, dot)) }
+        if (dot != null) button.drawable?.let { button.setImageDrawable(DotDrawable(it, dot, pulse)) }
         button.background = BadgeDrawable(badgeColor(colors, strong), badgeColor(colors, true))
         if (key == ToolbarKey.AI_CLEANUP) button.contentDescription = sparkleDescription ?: button.contentDescription
+    }
+
+    /** Clipboard history key: its icon in the accent colour, on the plain strip (no round badge). */
+    private fun decorateClipboard(button: ImageButton) {
+        val icon = KeyboardIconsSet.instance.getNewDrawable(ToolbarKey.CLIPBOARD.name, button.context)?.mutate()
+        icon?.setTintList(ColorStateList.valueOf(CLIPBOARD_TINT))
+        button.setImageDrawable(icon)
     }
 
     /** ✨ in its undo state: HeliBoard's undo arrow in white on a red (Enter-key colour) badge. */
@@ -158,6 +177,29 @@ object SovereignToolbar {
                 putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
             }
             putBoolean(PREF_PINNED_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: the pinned keys go clipboard, ✨, mic, so the mic sits at
+     * the far right edge of the strip (✨ and mic swap places if the mic came first). Fresh installs get
+     * this from the default pinned list.
+     */
+    fun migrateSparkleBeforeMic(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_SPARKLE_BEFORE_MIC_MIGRATED, false)) return
+        prefs.edit {
+            prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, null)?.let { saved ->
+                val entries = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.toMutableList()
+                val mic = entries.indexOfFirst { it.startsWith(ToolbarKey.VOICE.name + Separators.KV) }
+                val sparkle = entries.indexOfFirst { it.startsWith(ToolbarKey.AI_CLEANUP.name + Separators.KV) }
+                if (mic >= 0 && sparkle > mic) {
+                    val m = entries[mic]
+                    entries[mic] = entries[sparkle]
+                    entries[sparkle] = m
+                    putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
+                }
+            }
+            putBoolean(PREF_SPARKLE_BEFORE_MIC_MIGRATED, true)
         }
     }
 
@@ -303,15 +345,52 @@ object SovereignToolbar {
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
-    /** The key's own icon with a small coloured dot in the top corner; the dot ignores the icon tint. */
-    private class DotDrawable(private val base: Drawable, color: Int) : Drawable() {
+    /**
+     * The key's own icon with a small coloured dot in the top corner; the dot ignores the icon tint.
+     * With [pulse], the dot breathes (fades and shrinks a little, about once a second) while the
+     * drawable is visible. It stops when the key is hidden, detached or given another drawable (the
+     * view calls [setVisible]), and stays still when the system "remove animations" setting is on.
+     */
+    private class DotDrawable(private val base: Drawable, color: Int, private val pulse: Boolean) : Drawable() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        private var level = 1f // 1 = full dot, 0 = faintest
+        private var animator: ValueAnimator? = null
 
         override fun draw(canvas: Canvas) {
             base.draw(canvas)
             val b = bounds
-            val r = min(b.width(), b.height()) * 0.17f
-            canvas.drawCircle(b.right - r, b.top + r, r, paint)
+            val full = min(b.width(), b.height()) * 0.17f
+            val r = full * (0.75f + 0.25f * level)
+            paint.alpha = (90 + 165 * level).toInt()
+            canvas.drawCircle(b.right - full, b.top + full, r, paint)
+        }
+
+        override fun setVisible(visible: Boolean, restart: Boolean): Boolean {
+            val changed = super.setVisible(visible, restart)
+            if (visible) startPulse() else stopPulse()
+            return changed
+        }
+
+        private fun startPulse() {
+            if (!pulse || animator != null || !animationsEnabled()) return
+            animator = ValueAnimator.ofFloat(1f, 0f).apply {
+                duration = 550
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener {
+                    if (callback == null) { stopPulse(); return@addUpdateListener } // no view shows it any more
+                    level = it.animatedValue as Float
+                    invalidateSelf()
+                }
+                start()
+            }
+        }
+
+        private fun stopPulse() {
+            animator?.let { it.removeAllUpdateListeners(); it.cancel() }
+            animator = null
+            if (level != 1f) { level = 1f; invalidateSelf() }
         }
 
         override fun onBoundsChange(bounds: Rect) {
@@ -325,4 +404,8 @@ object SovereignToolbar {
         @Deprecated("Deprecated in Java")
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
+
+    /** False when the system "remove animations" setting (animator duration scale 0) is on. */
+    private fun animationsEnabled(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ValueAnimator.areAnimatorsEnabled() else true
 }

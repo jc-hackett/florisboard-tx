@@ -51,7 +51,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import helium314.keyboard.settings.DropDownField
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.latin.utils.prefs
 import kotlinx.coroutines.launch
 
 @Composable
@@ -398,6 +400,27 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                         onCheckedChange = { autoSparkle = it; settings.autoCleanupOnPeriod = it },
                     )
                 }
+
+                Text("Clipboard key", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Long-press the clipboard key in the strip for two quick actions. Pick them here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                val prefs = remember { ctx.prefs() }
+                var clipFirst by remember { mutableStateOf(SovereignClipboardPopup.first(prefs)) }
+                var clipSecond by remember { mutableStateOf(SovereignClipboardPopup.second(prefs)) }
+                Text("Clipboard long-press: first", style = MaterialTheme.typography.bodyLarge)
+                DropDownField(
+                    items = SovereignClipboardPopup.choices,
+                    selectedItem = clipFirst,
+                    onSelected = { clipFirst = it; SovereignClipboardPopup.setFirst(prefs, it) },
+                ) { Text(SovereignClipboardPopup.label(ctx, it)) }
+                Text("Clipboard long-press: second", style = MaterialTheme.typography.bodyLarge)
+                DropDownField(
+                    items = SovereignClipboardPopup.choices,
+                    selectedItem = clipSecond,
+                    onSelected = { clipSecond = it; SovereignClipboardPopup.setSecond(prefs, it) },
+                ) { Text(SovereignClipboardPopup.label(ctx, it)) }
 
                 Text("Microphone", style = MaterialTheme.typography.titleMedium)
                 Text(
