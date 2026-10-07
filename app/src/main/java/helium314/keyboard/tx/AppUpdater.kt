@@ -9,13 +9,20 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import helium314.keyboard.latin.BuildConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import kotlin.math.abs
 
 /**
  * Checks [BASE]/latest.json; if its build differs from the one running, downloads the APK,
@@ -113,5 +120,58 @@ class AppUpdater(context: Context) {
 
     companion object {
         const val BASE = "https://dictate.limn.dev/app/beta-h"
+    }
+}
+
+/**
+ * Whether a newer build is out, for the red "Update available" banner (see [SovereignToken.banner]).
+ * Asks the update server at most every few hours, when the keyboard opens or settings are shown; the
+ * answer is remembered, so the banner shows at once next time and goes away when this build is current.
+ */
+object SovereignUpdates {
+    private const val CHECK_EVERY_MS = 4 * 60 * 60 * 1000L
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    @Volatile private var checking = false
+
+    private val _available = MutableStateFlow(false)
+    val available: StateFlow<Boolean> = _available.asStateFlow()
+
+    private val _installRequested = MutableStateFlow(false)
+    /** Set when the banner was tapped: the SovereignBoard screen starts the install and resets it. */
+    val installRequested: StateFlow<Boolean> = _installRequested.asStateFlow()
+    fun requestInstall() { _installRequested.value = true }
+    fun installStarted() { _installRequested.value = false }
+
+    /** Re-reads the remembered answer. */
+    fun refresh(context: Context) {
+        val offered = DictationSettings(context).updateBuild
+        _available.value = offered.isNotBlank() && !offered.equals(BuildConfig.BUILD_COMMIT_HASH, ignoreCase = true)
+    }
+
+    /** What a check found (null: this build is the latest). Also called by the settings screen's own check. */
+    fun onChecked(context: Context, release: AppUpdater.Release?) {
+        val s = DictationSettings(context)
+        s.updateBuild = release?.build ?: ""
+        s.lastUpdateCheck = System.currentTimeMillis()
+        refresh(context)
+    }
+
+    @JvmStatic
+    fun checkIfDue(context: Context) {
+        val appContext = context.applicationContext
+        refresh(appContext)
+        if (checking) return
+        if (abs(System.currentTimeMillis() - DictationSettings(appContext).lastUpdateCheck) < CHECK_EVERY_MS) return
+        checking = true
+        scope.launch {
+            try {
+                onChecked(appContext, AppUpdater(appContext).check())
+            } catch (_: Exception) {
+                // offline or server down: keep the last answer, try again next time
+            } finally {
+                checking = false
+            }
+        }
     }
 }

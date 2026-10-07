@@ -15,7 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import androidx.core.content.edit
-import androidx.core.view.isVisible
+import android.widget.TextView
 import java.util.WeakHashMap
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet
 import helium314.keyboard.latin.common.ColorType
@@ -60,11 +60,11 @@ object SovereignToolbar {
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
             tokenBanner?.let { SovereignToken.checkIfDue(it.context) }
             combine(
-                DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered, SovereignToken.problem
-            ) { mic, busy, undo, tokenProblem -> Pair(Look(mic, busy, undo), tokenProblem) }
-                .collect { (look, tokenProblem) ->
+                DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered, SovereignToken.banner
+            ) { mic, busy, undo, banner -> Pair(Look(mic, busy, undo), banner) }
+                .collect { (look, banner) ->
                     apply(groups, look, force = true)
-                    tokenBanner?.isVisible = tokenProblem
+                    (tokenBanner as? TextView)?.let { SovereignToken.showOnKeyboardBanner(it, banner) }
                 }
         }
 

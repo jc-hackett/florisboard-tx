@@ -60,6 +60,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     val settings = remember { DictationSettings(ctx) }
     var server by remember { mutableStateOf(settings.serverUrl) }
     var token by remember { mutableStateOf(settings.token) }
+    // The saved token stays locked until "Change access token" is tapped (always open while empty).
+    var editingToken by remember { mutableStateOf(settings.token.isBlank()) }
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var copyDictation by remember { mutableStateOf(settings.addToClipboardHistory) }
@@ -75,6 +77,9 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var release by remember { mutableStateOf<AppUpdater.Release?>(null) }
     var updateBusy by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf("This version: ${updater.currentBuild.take(8)}. Tap to check.") }
+    // The red "Update available" banner was tapped: install as soon as the check has found the release.
+    var installAfterCheck by remember { mutableStateOf(false) }
+    lateinit var installUpdateRef: (AppUpdater.Release) -> Unit
 
     fun checkForUpdate() {
         if (updateBusy) return
@@ -83,12 +88,18 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         scope.launch {
             try {
                 release = updater.check()
+                SovereignUpdates.onChecked(ctx, release)
                 updateStatus = release?.let { "Version ${it.short} is ready." }
                     ?: "You have the latest version (${updater.currentBuild.take(8)})."
             } catch (e: Exception) {
                 updateStatus = "Couldn't check: ${e.message ?: "no connection"}. Tap to retry."
             } finally {
                 updateBusy = false
+            }
+            val r = release
+            if (installAfterCheck && r != null) {
+                installAfterCheck = false
+                installUpdateRef(r)
             }
         }
     }
@@ -152,10 +163,21 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         }
     }
 
+    installUpdateRef = ::installUpdate
+
     LaunchedEffect(Unit) {
         SovereignToken.checkIfDue(ctx)
         checkForUpdate()
         refreshKept()
+    }
+
+    // Opened from the red "Update available" banner: start the install (after the check, if needed).
+    val installRequested by SovereignUpdates.installRequested.collectAsState()
+    LaunchedEffect(installRequested) {
+        if (!installRequested) return@LaunchedEffect
+        SovereignUpdates.installStarted()
+        val r = release
+        if (r != null && !updateBusy) installUpdate(r) else { installAfterCheck = true; checkForUpdate() }
     }
 
     // Opened from the red token banner: put the cursor in the Access token field, keyboard up.
@@ -164,6 +186,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     val focusTokenRequested by SovereignToken.focusToken.collectAsState()
     LaunchedEffect(focusTokenRequested) {
         if (!focusTokenRequested) return@LaunchedEffect
+        editingToken = true
         delay(350) // let the screen finish sliding in
         runCatching { tokenFocus.requestFocus() }
         keyboard?.show()
@@ -222,10 +245,32 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     onValueChange = { token = it },
                     label = { Text("Access token") },
                     singleLine = true,
+                    readOnly = !editingToken,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth().focusRequester(tokenFocus),
                 )
+                if (!editingToken) {
+                    OutlinedButton(
+                        onClick = {
+                            editingToken = true
+                            val pasted = clipboardToken(ctx)
+                            if (pasted != null && pasted != settings.token) {
+                                token = pasted
+                                Toast.makeText(ctx, "Pasted the new token from the clipboard. Tap Save.", Toast.LENGTH_LONG).show()
+                            } else {
+                                token = ""
+                                scope.launch {
+                                    delay(100)
+                                    runCatching { tokenFocus.requestFocus() }
+                                    keyboard?.show()
+                                }
+                                Toast.makeText(ctx, "Paste or type the new token, then tap Save.", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Change access token") }
+                }
                 OutlinedTextField(
                     value = words,
                     onValueChange = { words = it },
@@ -240,6 +285,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                         settings.token = token
                         settings.words = words
                         server = settings.serverUrl
+                        token = settings.token
+                        if (token.isNotBlank()) editingToken = false
                         SovereignToken.onTokenSaved(ctx, tokenChanged)
                         Toast.makeText(ctx, "Saved", Toast.LENGTH_SHORT).show()
                     },
@@ -349,3 +396,13 @@ private fun openAppSettings(ctx: Context) {
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { ctx.startActivity(intent) }
 }
+
+/** The clipboard's text, if it looks like an access token ("dt_" and a long random part); else null. */
+private fun clipboardToken(context: Context): String? = runCatching {
+    val cm = context.getSystemService(android.content.ClipboardManager::class.java) ?: return null
+    val clip = cm.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { TOKEN_SHAPE.matches(it) }
+}.getOrNull()
+
+private val TOKEN_SHAPE = Regex("^dt_[A-Za-z0-9_-]{20,}$")

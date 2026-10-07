@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// SovereignBoard: the red "Enter your access token" banner, shown in the keyboard and in settings
-// while no token is saved or the server rejects the saved one.
+// SovereignBoard: the red banner, shown in the keyboard (over the suggestion strip) and along the bottom
+// of the settings screens: "Enter your access token" while no token is saved or the server rejects the
+// saved one; "Your access token has been changed" for a few seconds after a new token checks out; and
+// "Update available — tap to install" when a newer build is out. The token messages win.
 package helium314.keyboard.tx
 
 import android.content.Context
@@ -37,13 +39,24 @@ import helium314.keyboard.settings.SettingsActivity2
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
+
+/** What the red banner says, in order of priority. */
+enum class SovereignBanner(val text: String) {
+    TOKEN(SovereignToken.BANNER_TEXT),
+    TOKEN_CHANGED("Your access token has been changed"),
+    UPDATE("Update available — tap to install"),
+}
 
 /**
  * Whether the access token needs the user: none saved, or the server answered 401 / 403 to it (from
@@ -54,7 +67,10 @@ object SovereignToken {
     const val BANNER_TEXT = "Enter your access token"
     /** Intent extra for the settings activity: open the SovereignBoard screen, token field focused. */
     const val EXTRA_FOCUS_TOKEN = "sovereign_focus_token"
+    /** Intent extra for the settings activity: open the SovereignBoard screen and install the update. */
+    const val EXTRA_INSTALL_UPDATE = "sovereign_install_update"
     private const val CHECK_EVERY_MS = 60 * 60 * 1000L
+    private const val CHANGED_FLASH_MS = 3_000L
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile private var checking = false
@@ -62,6 +78,19 @@ object SovereignToken {
     private val _problem = MutableStateFlow(false)
     /** True while the banner should show. */
     val problem: StateFlow<Boolean> = _problem.asStateFlow()
+
+    private val _changedFlash = MutableStateFlow(false)
+
+    /** Which banner shows now, if any: token trouble first, then the token-changed flash, then updates. */
+    val banner: StateFlow<SovereignBanner?> =
+        combine(_problem, _changedFlash, SovereignUpdates.available) { problem, changed, update ->
+            when {
+                problem -> SovereignBanner.TOKEN
+                changed -> SovereignBanner.TOKEN_CHANGED
+                update -> SovereignBanner.UPDATE
+                else -> null
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     private val _focusToken = MutableStateFlow(false)
     /** Set when the banner was tapped: the SovereignBoard screen focuses the token field and resets it. */
@@ -90,11 +119,35 @@ object SovereignToken {
         _problem.value = s.token.isBlank()
     }
 
-    /** Settings saved: a new token isn't known to be rejected; check it with the server right away. */
+    /**
+     * Settings saved: a new token isn't known to be rejected; check it with the server right away.
+     * If a changed token checks out, the banner says so for a few seconds here, and once more the next
+     * time the keyboard opens.
+     */
     fun onTokenSaved(context: Context, tokenChanged: Boolean) {
         if (tokenChanged) DictationSettings(context).tokenRejected = false
         refresh(context)
-        check(context)
+        check(context, announceChange = tokenChanged)
+    }
+
+    /** The keyboard opened (not a restart in the same field): token check, pending flash, update check. */
+    @JvmStatic
+    fun onKeyboardOpened(context: Context) {
+        checkIfDue(context)
+        val s = DictationSettings(context)
+        if (s.tokenChangedPending) {
+            s.tokenChangedPending = false
+            if (!_problem.value) flashChanged()
+        }
+        SovereignUpdates.checkIfDue(context)
+    }
+
+    private fun flashChanged() {
+        scope.launch {
+            _changedFlash.value = true
+            delay(CHANGED_FLASH_MS)
+            _changedFlash.value = false
+        }
     }
 
     /** Keyboard start or settings screen opened: a light check against the server, at most hourly. */
@@ -108,12 +161,12 @@ object SovereignToken {
     }
 
     /** GET /v1/words with the token: 401 / 403 means rejected, 2xx accepted; anything else tells nothing. */
-    private fun check(context: Context) {
+    private fun check(context: Context, announceChange: Boolean = false) {
         val appContext = context.applicationContext
         val s = DictationSettings(appContext)
         val token = s.token
         val server = s.serverUrl
-        if (token.isBlank() || server.isBlank() || checking) return
+        if (token.isBlank() || server.isBlank() || (checking && !announceChange)) return
         checking = true
         scope.launch {
             try {
@@ -128,7 +181,13 @@ object SovereignToken {
                 try {
                     when (conn.responseCode) {
                         401, 403 -> if (DictationSettings(appContext).token == token) onRejected(appContext)
-                        in 200..299 -> if (DictationSettings(appContext).token == token) onAccepted(appContext)
+                        in 200..299 -> if (DictationSettings(appContext).token == token) {
+                            onAccepted(appContext)
+                            if (announceChange) {
+                                DictationSettings(appContext).tokenChangedPending = true
+                                flashChanged()
+                            }
+                        }
                     }
                 } finally {
                     conn.disconnect()
@@ -150,7 +209,28 @@ object SovereignToken {
         runCatching { context.startActivity(intent) }
     }
 
-    /** The keyboard's banner: covers the suggestion strip while the problem lasts ([SovereignToolbar.observe] shows it). */
+    /** Opens the SovereignBoard settings screen and starts installing the update. */
+    fun openUpdate(context: Context) {
+        SovereignUpdates.requestInstall()
+        val intent = Intent(context, SettingsActivity2::class.java)
+            .putExtra(EXTRA_INSTALL_UPDATE, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        runCatching { context.startActivity(intent) }
+    }
+
+    /** A tap on the keyboard's banner. */
+    private fun onKeyboardBannerClick(context: Context) {
+        when (banner.value) {
+            SovereignBanner.TOKEN -> openSettings(context)
+            SovereignBanner.UPDATE -> openUpdate(context)
+            SovereignBanner.TOKEN_CHANGED, null -> Unit
+        }
+    }
+
+    /**
+     * The keyboard's banner: covers the suggestion strip while [banner] has something to say
+     * ([SovereignToolbar.observe] shows it and sets the text).
+     */
     fun createKeyboardBanner(context: Context): TextView = TextView(context).apply {
         text = BANNER_TEXT
         setTextColor(Color.WHITE)
@@ -163,27 +243,47 @@ object SovereignToken {
         translationZ = 100f // above the pinned keys
         contentDescription = "$BANNER_TEXT. Opens settings."
         isVisible = false
-        setOnClickListener { openSettings(it.context) }
+        setOnClickListener { onKeyboardBannerClick(it.context) }
+    }
+
+    /** Shows [kind] on a banner made by [createKeyboardBanner], or hides it. */
+    fun showOnKeyboardBanner(view: TextView, kind: SovereignBanner?) {
+        view.isVisible = kind != null
+        if (kind == null) return
+        view.text = kind.text
+        view.contentDescription = if (kind == SovereignBanner.TOKEN_CHANGED) kind.text else "${kind.text}. Opens settings."
     }
 }
 
-/** The settings app's banner, along the bottom of a screen. */
+/**
+ * The settings app's banner, along the bottom of a screen. [onOpenSovereign] goes to the SovereignBoard
+ * screen (a no-op when already there).
+ */
 @Composable
-fun SovereignTokenBanner(onClick: () -> Unit) {
+fun SovereignTokenBanner(onOpenSovereign: () -> Unit) {
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) { SovereignToken.refresh(ctx) }
-    val problem by SovereignToken.problem.collectAsState()
-    if (!problem) return
+    LaunchedEffect(Unit) {
+        SovereignToken.refresh(ctx)
+        SovereignUpdates.checkIfDue(ctx)
+    }
+    val kind by SovereignToken.banner.collectAsState()
+    val shown = kind ?: return
     Box(
         Modifier.fillMaxWidth()
             .background(androidx.compose.ui.graphics.Color(SovereignToken.RED))
-            .clickable(onClick = onClick)
+            .clickable {
+                when (shown) {
+                    SovereignBanner.TOKEN -> { SovereignToken.requestTokenFocus(); onOpenSovereign() }
+                    SovereignBanner.UPDATE -> { SovereignUpdates.requestInstall(); onOpenSovereign() }
+                    SovereignBanner.TOKEN_CHANGED -> Unit
+                }
+            }
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            SovereignToken.BANNER_TEXT,
+            shown.text,
             color = androidx.compose.ui.graphics.Color.White,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleSmall,
@@ -191,15 +291,15 @@ fun SovereignTokenBanner(onClick: () -> Unit) {
     }
 }
 
-/** [content] with the token banner along its bottom while the token needs the user. */
+/** [content] with the red banner along its bottom while there is something to say. */
 @Composable
-fun WithTokenBanner(onBannerClick: () -> Unit, content: @Composable () -> Unit) {
-    val problem by SovereignToken.problem.collectAsState()
+fun WithTokenBanner(onOpenSovereign: () -> Unit, content: @Composable () -> Unit) {
+    val kind by SovereignToken.banner.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Box(
             Modifier.weight(1f)
-                .then(if (problem) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)
+                .then(if (kind != null) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)
         ) { content() }
-        SovereignTokenBanner(onBannerClick)
+        SovereignTokenBanner(onOpenSovereign)
     }
 }

@@ -60,8 +60,25 @@ class DictationSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_TOKEN_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_TOKEN_CHECK, value).apply()
 
+    /** A changed token checked out; the keyboard says so once, the next time it opens. */
+    var tokenChangedPending: Boolean
+        get() = prefs.getBoolean(KEY_TOKEN_CHANGED_PENDING, false)
+        set(value) = prefs.edit().putBoolean(KEY_TOKEN_CHANGED_PENDING, value).apply()
+
+    /** The build the update server last offered (empty if none), and when it was last asked. */
+    var updateBuild: String
+        get() = prefs.getString(KEY_UPDATE_BUILD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_UPDATE_BUILD, value).apply()
+
+    var lastUpdateCheck: Long
+        get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
+
     companion object {
         private const val FILE = "dictation"
+        private const val KEY_TOKEN_CHANGED_PENDING = "token_changed_pending"
+        private const val KEY_UPDATE_BUILD = "update_build"
+        private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         private const val KEY_TOKEN_REJECTED = "token_rejected"
         private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
         private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"
