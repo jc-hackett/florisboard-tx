@@ -32,6 +32,18 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"/>
 
+        <!-- SovereignBoard: "Allow photo access to see screenshots here", set up from SovereignScreenshots -->
+        <TextView
+            android:id="@+id/clipboard_sovereign_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:gravity="center"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
     </FrameLayout>
 
     <helium314.keyboard.keyboard.MainKeyboardView

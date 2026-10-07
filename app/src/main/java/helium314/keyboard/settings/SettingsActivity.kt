@@ -95,6 +95,9 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
         if (installUpdate) helium314.keyboard.tx.SovereignUpdates.requestInstall() // SovereignBoard:
         // SovereignBoard: the keyboard's microphone banner opens our screen
         val openSovereign = intent?.getBooleanExtra(SovereignToken.EXTRA_OPEN_SOVEREIGN, false) ?: false
+        // SovereignBoard: the clipboard history's photo hint: open our screen and ask for photo access
+        if (intent?.getBooleanExtra(SovereignToken.EXTRA_PHOTO_ACCESS, false) == true)
+            helium314.keyboard.tx.SovereignScreenshots.requestAccessOnOpen()
 
         val cv = ComposeView(context = this)
         setContentView(cv)

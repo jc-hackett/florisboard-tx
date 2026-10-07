@@ -37,6 +37,7 @@ import helium314.keyboard.latin.utils.getEnabledClipboardToolbarKeys
 import helium314.keyboard.latin.utils.onClickToolbarKey
 import helium314.keyboard.latin.utils.onLongClickToolbarKey
 import helium314.keyboard.latin.utils.prefs
+import helium314.keyboard.tx.SovereignScreenshots // SovereignBoard:
 import helium314.keyboard.latin.utils.setToolbarButtonsActivatedStateOnPrefChange
 
 @SuppressLint("CustomViewStyleable")
@@ -187,6 +188,8 @@ class ClipboardHistoryView @JvmOverloads constructor(
 
         // absurd workaround so Android sets the correct color from stateList (depending on "activated")
         toolbarKeys.forEach { it.isEnabled = false; it.isEnabled = true }
+        // SovereignBoard: recent screenshots go into the history; without photo access, a hint says so
+        SovereignScreenshots.onClipboardHistoryShown(context, findViewById(R.id.clipboard_sovereign_hint), clipboardRecyclerView)
     }
 
     fun stopClipboardHistory() {

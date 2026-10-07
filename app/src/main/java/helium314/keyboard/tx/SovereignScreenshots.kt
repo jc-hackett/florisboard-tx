@@ -3,6 +3,8 @@
 // so when the keyboard opens we look at the single newest image in a Screenshots folder (with photo
 // access only) and, if it is under three minutes old and hasn't been used or dismissed, offer it in the
 // suggestion strip. Tap pastes it (and adds it to clipboard history); the x or a long-press dismisses it.
+// Also, when the keyboard or the clipboard history opens, screenshots from the last 30 minutes are added
+// to clipboard history by themselves (each once). Without photo access the history shows a one-line hint.
 package helium314.keyboard.tx
 
 import android.Manifest
@@ -47,6 +49,11 @@ object SovereignScreenshots {
     private const val RECENT_MS = 3 * 60 * 1000L
     private const val PREFS = "dictation"
     private const val KEY_HANDLED = "screenshot_handled_id"
+    /** Screenshots this new go into clipboard history by themselves. */
+    private const val IMPORT_MS = 30 * 60 * 1000L
+    private const val IMPORT_MAX = 10
+    /** MediaStore ids already put into clipboard history (newest last), so each goes in once. */
+    private const val KEY_IMPORTED = "screenshot_imported_ids"
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -86,6 +93,135 @@ object SovereignScreenshots {
         if (candidate?.id == id) candidate = null
     }
 
+    private val _accessRequested = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** Set when the clipboard history's hint was tapped: the SovereignBoard screen asks for photo access. */
+    val accessRequested: kotlinx.coroutines.flow.StateFlow<Boolean> = _accessRequested
+    fun requestAccessOnOpen() { _accessRequested.value = true }
+    fun accessRequestHandled() { _accessRequested.value = false }
+
+    @Volatile private var importing = false
+
+    private fun importedIds(context: Context): List<Long> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_IMPORTED, "").orEmpty()
+            .split(',').mapNotNull { it.toLongOrNull() }
+
+    private fun markImported(context: Context, id: Long) {
+        val ids = (importedIds(context) + id).takeLast(100)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_IMPORTED, ids.joinToString(",")).apply()
+    }
+
+    /**
+     * Puts every screenshot from the last 30 minutes that isn't in clipboard history yet into it, as an image
+     * clip dated when the screenshot was taken (so the newest is on top). Each MediaStore id goes in once,
+     * and the history itself skips a picture it already holds. Only with "Offer recent screenshots" on,
+     * photo access and clipboard history on; never in incognito mode.
+     */
+    @JvmStatic
+    fun importRecent(context: Context) {
+        val ctx = context.applicationContext
+        if (!DictationSettings(ctx).offerScreenshots || !hasAccess(ctx)) return
+        val sv = Settings.getValues()
+        if (!sv.mClipboardHistoryEnabled || sv.mIncognitoModeEnabled) return
+        if (importing) return
+        importing = true
+        scope.launch {
+            try {
+                val dao = ClipboardDao.getInstance(ctx) ?: return@launch
+                val done = importedIds(ctx).toSet()
+                val shots = withContext(Dispatchers.IO) {
+                    runCatching { findRecent(ctx, IMPORT_MS, IMPORT_MAX) }.getOrDefault(emptyList())
+                }.filter { it.first !in done }
+                for ((id, uri, addedMs, mime) in shots.sortedBy { it.third }) {
+                    // Copy off the main thread first; the history then takes its copy from this local file
+                    // on the main thread, as it does for copied images (its list views are updated there).
+                    val tmp = java.io.File(ctx.cacheDir, "sovereign_shot_$id")
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            ctx.contentResolver.openInputStream(uri)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } } != null
+                        }.getOrDefault(false)
+                    }
+                    if (ok) runCatching {
+                        dao.addClipUri(addedMs, false, Uri.fromFile(tmp), ClipDescription("Screenshot", arrayOf(mime)), ctx)
+                    }.onFailure { Log.w(TAG, "could not add screenshot to history", it) }
+                    tmp.delete()
+                    if (ok) markImported(ctx, id)
+                }
+            } finally {
+                importing = false
+            }
+        }
+    }
+
+    /** Up to [max] screenshots newer than [maxAgeMs]: (id, uri, time taken in ms, mime type), newest first. */
+    private fun findRecent(context: Context, maxAgeMs: Long, max: Int): List<Quad> {
+        val now = System.currentTimeMillis()
+        val since = (now - maxAgeMs) / 1000
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.MIME_TYPE,
+        )
+        val (where, args) = screenshotsWhere(since)
+        val order = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+        val cursor = if (Build.VERSION.SDK_INT >= 30) {
+            context.contentResolver.query(collection, projection, Bundle().apply {
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, where)
+                putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+                putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, max)
+            }, null)
+        } else {
+            context.contentResolver.query(collection, projection, where, args, order)
+        }
+        val out = mutableListOf<Quad>()
+        cursor?.use { c ->
+            while (c.moveToNext() && out.size < max) {
+                val id = c.getLong(0)
+                val addedMs = c.getLong(1) * 1000
+                if (now - addedMs > maxAgeMs) continue
+                out += Quad(id, ContentUris.withAppendedId(collection, id), addedMs, c.getString(2) ?: "image/png")
+            }
+        }
+        return out
+    }
+
+    private data class Quad(val first: Long, val second: Uri, val third: Long, val fourth: String)
+
+    private fun screenshotsWhere(since: Long): Pair<String, Array<String>> =
+        if (Build.VERSION.SDK_INT >= 29) {
+            "(${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? OR ${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ?)" +
+                " AND ${MediaStore.Images.Media.DATE_ADDED} >= ?" to arrayOf("%Screenshots%", "Screenshots", since.toString())
+        } else {
+            @Suppress("DEPRECATION")
+            "(${MediaStore.Images.Media.DATA} LIKE ? OR ${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ?)" +
+                " AND ${MediaStore.Images.Media.DATE_ADDED} >= ?" to arrayOf("%/Screenshots/%", "Screenshots", since.toString())
+        }
+
+    /**
+     * The clipboard history view opened: put recent screenshots in, and show [hint] ("Allow photo access to
+     * see screenshots here", tap opens the SovereignBoard screen and asks) when photo access is missing.
+     */
+    @JvmStatic
+    fun onClipboardHistoryShown(context: Context, hint: android.widget.TextView?, list: View?) {
+        val wantsHint = DictationSettings(context).offerScreenshots && !hasAccess(context)
+        if (hint != null) {
+            hint.isVisible = wantsHint
+            if (wantsHint) {
+                val colors = Settings.getValues().mColors
+                hint.text = "Allow photo access to see screenshots here"
+                hint.setTextColor(SovereignTheme.hotkeyColor(context))
+                hint.setBackgroundColor(colors.get(ColorType.MAIN_BACKGROUND) or 0xFF000000.toInt())
+                hint.contentDescription = "Allow photo access to see screenshots here. Opens settings."
+                hint.setOnClickListener { SovereignToken.openSovereign(it.context, SovereignToken.EXTRA_PHOTO_ACCESS) }
+            }
+        }
+        if (list != null) {
+            val top = if (wantsHint) (30 * context.resources.displayMetrics.density).toInt() else 0
+            list.setPadding(list.paddingLeft, top, list.paddingRight, list.paddingBottom)
+            (list as? ViewGroup)?.clipToPadding = false
+        }
+        if (!wantsHint) importRecent(context)
+    }
+
     /** The keyboard opened in a new field: look for a fresh screenshot in the background. */
     @JvmStatic
     fun onKeyboardShown(ime: LatinIME) {
@@ -93,6 +229,7 @@ object SovereignScreenshots {
         val ctx = ime.applicationContext
         if (!DictationSettings(ctx).offerScreenshots || !hasAccess(ctx)) return
         if (InputTypeUtils.isAnyPasswordInputType(ime.currentInputEditorInfo?.inputType ?: 0)) return
+        importRecent(ctx)
         scope.launch {
             val shot = withContext(Dispatchers.IO) { runCatching { findNewest(ctx) }.getOrNull() } ?: return@launch
             candidate = shot

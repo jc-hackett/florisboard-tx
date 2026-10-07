@@ -85,6 +85,13 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         shotAccess = screenshotAccessText(ctx)
     }
+    // Opened from the clipboard history's "Allow photo access" hint: ask right away.
+    val photoAsked by SovereignScreenshots.accessRequested.collectAsState()
+    LaunchedEffect(photoAsked) {
+        if (!photoAsked) return@LaunchedEffect
+        SovereignScreenshots.accessRequestHandled()
+        if (!SovereignScreenshots.hasFullAccess(ctx)) photoLauncher.launch(SovereignScreenshots.permissionsToRequest())
+    }
     val micMissing by SovereignToken.micMissing.collectAsState()
     val micGranted = !micMissing
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -333,7 +340,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Offer recent screenshots", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "A screenshot taken in the last 3 minutes shows above the keys; tap to paste it. " +
+                            "Screenshots from the last 30 minutes go into clipboard history by themselves, and " +
+                                "one taken in the last 3 minutes also shows above the keys; tap to paste it. " +
                                 "Needs photo access. " + shotAccess,
                             style = MaterialTheme.typography.bodyMedium,
                         )
