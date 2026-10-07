@@ -11,13 +11,15 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import androidx.core.database.getStringOrNull
 import helium314.keyboard.latin.ClipboardHistoryEntry
-import helium314.keyboard.latin.common.FileUtils
 import helium314.keyboard.latin.settings.Defaults
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.ChecksumCalculator
+import helium314.keyboard.latin.utils.ExecutorUtils
 import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.prefs
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.collections.joinToString
 
 /** Class providing cached access to the clipboard table */
@@ -71,8 +73,9 @@ class ClipboardDao private constructor(private val db: Database) {
         insertNewEntry(timestamp, pinned, text, null, null, null)
     }
 
-    // SovereignBoard: maxBytes (if >= 0) is enforced while copying, for clips whose size could not be queried
-    fun addClipUri(timestamp: Long, pinned: Boolean, uri: Uri, description: ClipDescription, context: Context, maxBytes: Long = -1) = synchronized(this) {
+    // SovereignBoard: maxBytes (if >= 0) is enforced while copying, for clips whose size could not be queried.
+    //  Returns the outcome for the clipboard check (see tx/ClipboardCheck.kt); copy errors are thrown.
+    fun addClipUri(timestamp: Long, pinned: Boolean, uri: Uri, description: ClipDescription, context: Context, maxBytes: Long = -1): String = synchronized(this) {
         clearOldClips()
         val extension = if (description.mimeTypeCount == 0) ""
             else ".${MimeTypeMap.getSingleton().getExtensionFromMimeType(description.getMimeType(0))}"
@@ -80,14 +83,24 @@ class ClipboardDao private constructor(private val db: Database) {
         tempFile.delete()
         // SovereignBoard: copy right away (we are called from the clipboard-change callback, while the URI grant
         //  is valid), stopping if the clip turns out larger than the limit; log why a clip is dropped
-        runCatching { copyLimited(uri, context, tempFile, maxBytes) }.onFailure {
-            Log.w(TAG, "not saving clip from $uri", it)
+        try {
+            copyLimited(uri, context, tempFile, maxBytes)
+        } catch (e: Throwable) {
+            Log.w(TAG, "not saving clip from ${uri.scheme}://${uri.authority}", e)
             tempFile.delete()
-            return@synchronized
+            throw e
+        }
+        if (tempFile.length() == 0L) {
+            tempFile.delete()
+            return@synchronized "skipped-empty-file"
         }
 
         // we set the file name to the sha256 of the content to have virtually unique names and an easy way to find duplicates
         val sha256 = ChecksumCalculator.checksum(tempFile)
+        if (sha256 == null) { // SovereignBoard: was stored as "null.<ext>", colliding with every later image
+            tempFile.delete()
+            return@synchronized "error-checksum-failed"
+        }
         val file = File(clipFilesDir, sha256 + extension)
 
         val existingIndex = cache.indexOfFirst { it.filename == file.name }
@@ -95,17 +108,38 @@ class ClipboardDao private constructor(private val db: Database) {
             if (cache[existingIndex].timeStamp != timestamp)
                 updateTimestampAt(existingIndex, timestamp)
             tempFile.delete()
-            return@synchronized
+            return@synchronized "saved-as-image (already in history)"
         }
-        tempFile.renameTo(file)
+        if (!tempFile.renameTo(file)) { // SovereignBoard: check
+            tempFile.delete()
+            return@synchronized "error-could-not-store-file"
+        }
         // we could try getting a thumbnail using context.contentResolver.loadThumbnail(uri, Size(a, b), null)
         // but currently we don't cache them anyway, so no use for that
         insertNewEntry(timestamp, pinned, description.label?.toString(), file.name, description.getMimeTypes(), context)
+        "saved-as-image"
     }
 
-    // SovereignBoard: like FileUtils.copyContentUriToNewFile, but with an optional size cap
+    // SovereignBoard: copy with an optional size cap, on a background thread (a provider may be slow or remote),
+    //  passing ANY failure back. FileUtils.copyContentUriToNewFile only caught IOException there, so a
+    //  SecurityException ("Permission Denial") escaped on the worker thread and the caller saw success.
     private fun copyLimited(uri: Uri, context: Context, outfile: File, maxBytes: Long) {
-        if (maxBytes < 0) return FileUtils.copyContentUriToNewFile(uri, context, outfile)
+        var error: Throwable? = null
+        val done = CountDownLatch(1)
+        ExecutorUtils.getBackgroundExecutor(ExecutorUtils.KEYBOARD).execute {
+            try {
+                copyLimitedNow(uri, context, outfile, maxBytes)
+            } catch (t: Throwable) {
+                error = t
+            } finally {
+                done.countDown()
+            }
+        }
+        if (!done.await(20, TimeUnit.SECONDS)) throw java.io.IOException("copy timed out")
+        error?.let { throw it }
+    }
+
+    private fun copyLimitedNow(uri: Uri, context: Context, outfile: File, maxBytes: Long) {
         val input = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("can't open stream")
         input.use { ins ->
             outfile.outputStream().use { out ->
@@ -115,7 +149,7 @@ class ClipboardDao private constructor(private val db: Database) {
                     val read = ins.read(buffer)
                     if (read < 0) break
                     total += read
-                    if (total > maxBytes) throw java.io.IOException("clip larger than limit of $maxBytes bytes")
+                    if (maxBytes >= 0 && total > maxBytes) throw java.io.IOException("clip larger than limit of $maxBytes bytes")
                     out.write(buffer, 0, read)
                 }
             }

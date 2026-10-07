@@ -34,6 +34,7 @@ import helium314.keyboard.latin.utils.InputTypeUtils
 import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.ToolbarKey
 import helium314.keyboard.latin.utils.prefs
+import helium314.keyboard.tx.ClipboardCheck // SovereignBoard:
 import helium314.keyboard.tx.DictationManager // SovereignBoard:
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -47,13 +48,14 @@ class ClipboardHistoryManager(
     private var clipboardSuggestionView: View? = null
     private var clipboardDao: ClipboardDao? = null
     private var tempPrimaryClip = false
+    private var lastHandledTimestamp = 0L // SovereignBoard: clip already read (see onKeyboardShown)
 
     fun onCreate() {
         clipboardManager = latinIME.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboardManager.addPrimaryClipChangedListener(this)
         clipboardDao = ClipboardDao.getInstance(latinIME)
         if (latinIME.mSettings.current.mClipboardHistoryEnabled)
-            fetchPrimaryClip()
+            fetchPrimaryClip("start")
     }
 
     fun onDestroy() {
@@ -63,31 +65,77 @@ class ClipboardHistoryManager(
     override fun onPrimaryClipChanged() {
         // Make sure we read clipboard content only if history settings is set
         if (latinIME.mSettings.current.mClipboardHistoryEnabled) {
-            fetchPrimaryClip()
+            fetchPrimaryClip("copy")
             dontShowCurrentSuggestion = false
+        } else {
+            ClipboardCheck.record(latinIME, "copy", null, "skipped-history-off") // SovereignBoard:
         }
+    }
+
+    // SovereignBoard: the change listener can miss a clip (keyboard process restarted, another keyboard was
+    //  the default at copy time, ...). When the keyboard opens, read the current clip once if we haven't yet.
+    fun onKeyboardShown() {
+        if (!latinIME.mSettings.current.mClipboardHistoryEnabled || tempPrimaryClip) return
+        val clipData = runCatching { clipboardManager.primaryClip }.getOrNull() ?: return
+        if (ClipboardManagerCompat.getClipTimestamp(clipData) == lastHandledTimestamp) return
+        fetchPrimaryClip("keyboard-open")
     }
 
     // todo for later
     //  setting whether to store sensitive clip data?
     //  care about other clip items than first?
-    private fun fetchPrimaryClip() {
+    // SovereignBoard: every exit records its outcome in ClipboardCheck (privacy-safe, shown in SovereignScreen)
+    private fun fetchPrimaryClip(source: String) {
         if (tempPrimaryClip) return // avoid updating history
-        val clipData = clipboardManager.primaryClip ?: return
-        if (clipData.itemCount == 0) return
-        val clipItem = clipData.getItemAt(0) ?: return
-        val description = clipData.description ?: return
-        val timeStamp = ClipboardManagerCompat.getClipTimestamp(clipData)
-
-        if (description.hasMimeType("text/*")) {
-            val content = clipItem.coerceToText(latinIME)
-            if (TextUtils.isEmpty(content)) return
-            clipboardDao?.addClip(timeStamp, false, content.toString())
-        } else {
-            // SovereignBoard: also save clips whose size can't be queried (copy with the limit enforced)
-            val maxBytes = maySaveFromUri(clipItem.uri, latinIME) ?: return
-            clipboardDao?.addClipUri(timeStamp, false, clipItem.uri, description, latinIME, maxBytes)
+        val clipData = try {
+            clipboardManager.primaryClip
+        } catch (e: Exception) {
+            ClipboardCheck.record(latinIME, source, null, ClipboardCheck.error(e)); return
         }
+        if (clipData == null) {
+            // on Android 10+ this is what a refused read looks like (we're not the default keyboard)
+            ClipboardCheck.record(latinIME, source, null, "skipped-no-clip-readable"); return
+        }
+        val description = clipData.description
+        if (clipData.itemCount == 0 || description == null) {
+            ClipboardCheck.record(latinIME, source, clipData, "skipped-empty-clip"); return
+        }
+        val clipItem = clipData.getItemAt(0)
+        if (clipItem == null) {
+            ClipboardCheck.record(latinIME, source, clipData, "skipped-empty-clip"); return
+        }
+        val timeStamp = ClipboardManagerCompat.getClipTimestamp(clipData)
+        lastHandledTimestamp = timeStamp
+        if (clipboardDao == null) clipboardDao = ClipboardDao.getInstance(latinIME) // SovereignBoard: retry
+        val dao = clipboardDao
+        if (dao == null) {
+            ClipboardCheck.record(latinIME, source, clipData, "error-no-database"); return
+        }
+
+        // SovereignBoard: an image clip goes to the file path even if the description also lists a text
+        //  type (e.g. text/uri-list alongside image/png); upstream checked text first and would store the
+        //  content:// address as a text clip instead of the picture
+        val isImageUri = clipItem.uri != null && description.hasMimeType("image/*")
+        val outcome = try {
+            if (!isImageUri && description.hasMimeType("text/*")) {
+                val content = clipItem.coerceToText(latinIME)
+                if (TextUtils.isEmpty(content)) "skipped-empty-text"
+                else { dao.addClip(timeStamp, false, content.toString()); "saved-as-text" }
+            } else if (clipItem.uri == null) {
+                "skipped-no-uri"
+            } else {
+                // SovereignBoard: also save clips whose size can't be queried (copy with the limit enforced)
+                when (val maxBytes = maySaveFromUri(clipItem.uri, latinIME)) {
+                    null -> if (!latinIME.prefs().getBoolean(Settings.PREF_CLIPBOARD_USE_FILES, Defaults.PREF_CLIPBOARD_USE_FILES))
+                        "skipped-images-setting-off" else "skipped-too-large"
+                    else -> dao.addClipUri(timeStamp, false, clipItem.uri, description, latinIME, maxBytes)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "could not save clip", e)
+            ClipboardCheck.error(e)
+        }
+        ClipboardCheck.record(latinIME, source, clipData, outcome)
     }
 
     fun getPrimaryClipIfText(): String? {

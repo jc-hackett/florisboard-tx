@@ -260,6 +260,12 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     )
                 }
 
+                // Clipboard check: what happened to the last copy (privacy-safe, see ClipboardCheck)
+                Text("Clipboard check", style = MaterialTheme.typography.titleMedium)
+                var clipCheck by remember { mutableStateOf(ClipboardCheck.summary(ctx)) }
+                Text(clipCheck, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { clipCheck = ClipboardCheck.summary(ctx) }) { Text("Refresh") }
+
                 Text("Help it learn your voice", style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {

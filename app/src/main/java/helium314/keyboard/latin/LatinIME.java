@@ -883,6 +883,7 @@ public class LatinIME extends InputMethodService implements
 
         setGestureDataGatheringMode(editorInfo, restarting);
         SovereignToken.checkIfDue(this); // SovereignBoard: light token check, at most hourly
+        mClipboardHistoryManager.onKeyboardShown(); // SovereignBoard: catch clips the change listener missed
 
         mDictionaryFacilitator.onStartInput();
         // Switch to the null consumer to handle cases leading to early exit below, for which we

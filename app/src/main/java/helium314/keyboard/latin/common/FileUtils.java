@@ -63,7 +63,7 @@ public class FileUtils {
         ExecutorUtils.getBackgroundExecutor(ExecutorUtils.KEYBOARD).execute(() -> {
             try {
                 copyStreamToNewFile(context.getContentResolver().openInputStream(uri), outfile);
-            } catch (IOException e) {
+            } catch (Exception e) { // SovereignBoard: was IOException; a SecurityException escaped and looked like success
                 allOk[0] = false;
             } finally {
                 wait.countDown();
