@@ -176,8 +176,11 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     // SovereignBoard: word B and the "+" button share slot B, so "+" never moves word A
+    //  Taps on the empty part of slot B still go to word B.
     private val wordBRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
+        setOnClickListener { wordViews[1].let { if (it.isEnabled && it.tag is Int) it.performClick() } }
+        setOnLongClickListener { wordViews[1].let { it.isEnabled && it.tag is Int && it.performLongClick() } }
     }
 
     /** SovereignBoard: show "+" for [word], or hide it (null). */
@@ -185,6 +188,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         addWordCandidate = word
         addWordKey.isVisible = word != null
         addWordKey.contentDescription = if (word == null) "Add to dictionary" else "Add $word to dictionary"
+        layoutHelper.refitSovereignWords() // SovereignBoard: word B gets the room "+" frees, or gives it back
     }
 
     init {
@@ -485,6 +489,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             val h = icon.intrinsicHeight
             wordView.setCompoundDrawablesWithIntrinsicBounds(icon, null, null, null)
             wordView.ellipsize = TextUtils.TruncateAt.END
+            layoutHelper.refitSovereignWords() // SovereignBoard: the word shrinks to stay readable next to the bin
             val downOk = AtomicBoolean(false)
             wordView.setOnTouchListener { _, motionEvent ->
                 if (motionEvent.action == MotionEvent.ACTION_UP && downOk.get()) {
@@ -645,8 +650,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         @JvmField
         var DEBUG_SUGGESTIONS = false
         private const val DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.5f
-        private const val EMOJI_SLOT_WIDTH_DP = 48 // SovereignBoard:
-        private const val ADD_WORD_KEY_WIDTH_DP = 40 // SovereignBoard:
+        private const val EMOJI_SLOT_WIDTH_DP = 36 // SovereignBoard:
+        private const val ADD_WORD_KEY_WIDTH_DP = 32 // SovereignBoard:
         private val TAG = SuggestionStripView::class.java.simpleName
     }
 }
