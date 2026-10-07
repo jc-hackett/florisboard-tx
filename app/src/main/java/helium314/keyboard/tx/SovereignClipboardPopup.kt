@@ -33,7 +33,7 @@ object SovereignClipboardPopup {
 
     /** Toolbar actions the two hotkeys can be set to: everything but the strip's own keys. */
     val choices: List<ToolbarKey> = ToolbarKey.entries.filterNot {
-        it in listOf(ToolbarKey.VOICE, ToolbarKey.AI_CLEANUP, ToolbarKey.CLIPBOARD, ToolbarKey.CLOSE_HISTORY, ToolbarKey.BACKGROUND_GATHERING)
+        it in listOf(ToolbarKey.VOICE, ToolbarKey.AI_CLEANUP, ToolbarKey.FACT_CHECK, ToolbarKey.CLIPBOARD, ToolbarKey.CLOSE_HISTORY, ToolbarKey.BACKGROUND_GATHERING)
     }
 
     fun first(prefs: SharedPreferences) = read(prefs, PREF_FIRST, DEFAULT_FIRST)

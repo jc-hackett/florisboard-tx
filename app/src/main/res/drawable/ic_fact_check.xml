@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SovereignBoard: the fact-check toolbar key: a magnifier with a tick in its lens.
+    SPDX-License-Identifier: GPL-3.0-only
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFF"
+        android:strokeWidth="2"
+        android:pathData="M10,3.5a6.5,6.5 0,1 1,0 13a6.5,6.5 0,1 1,0 -13z"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:pathData="M15,15L20.5,20.5"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M7.1,10.2L9.2,12.3L13,8.2"/>
+</vector>

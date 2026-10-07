@@ -96,6 +96,7 @@ fun getCodeForToolbarKey(key: ToolbarKey) = Settings.getInstance().getCustomTool
     FLOATING -> KeyCode.TOGGLE_FLOATING_WINDOW
     BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING
     AI_CLEANUP -> KeyCode.AI_CLEANUP // SovereignBoard:
+    FACT_CHECK -> KeyCode.FACT_CHECK // SovereignBoard:
 }
 
 fun getCodeForToolbarKeyLongClick(key: ToolbarKey) = Settings.getInstance().getCustomToolbarLongpressCode(key) ?: when (key) {
@@ -124,6 +125,7 @@ enum class ToolbarKey {
     INCOGNITO, AUTOCORRECT, CLEAR_CLIPBOARD, CLOSE_HISTORY, EMOJI, LEFT, RIGHT, UP, DOWN, WORD_LEFT, WORD_RIGHT,
     PAGE_UP, PAGE_DOWN, FULL_LEFT, FULL_RIGHT, PAGE_START, PAGE_END, BACKGROUND_GATHERING,
     AI_CLEANUP, // SovereignBoard: the ✨ key
+    FACT_CHECK, // SovereignBoard: the fact-check (magnifier) key
 }
 
 enum class ToolbarMode {
@@ -142,9 +144,9 @@ val defaultToolbarPref by lazy {
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }
 }
 
-// SovereignBoard: clipboard history, ✨, then the mic (at the far right edge) pinned in the suggestion strip,
-//  next to the word suggestions
-private val sovereignPinned = listOf(CLIPBOARD, AI_CLEANUP, VOICE)
+// SovereignBoard: clipboard history, ✨, fact check, then the mic (at the far right edge) pinned in the
+//  suggestion strip, next to the word suggestions
+private val sovereignPinned = listOf(CLIPBOARD, AI_CLEANUP, FACT_CHECK, VOICE)
 val defaultPinnedToolbarPref = (sovereignPinned + entries.filterNot { it == CLOSE_HISTORY || it in sovereignPinned })
     .joinToString(Separators.ENTRY) { it.name + Separators.KV + (it in sovereignPinned) }
 

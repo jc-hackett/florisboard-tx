@@ -96,6 +96,7 @@ import helium314.keyboard.settings.SettingsActivity2;
 import helium314.keyboard.tx.AiCleanup; // SovereignBoard:
 import helium314.keyboard.tx.DictationManager; // SovereignBoard:
 import helium314.keyboard.tx.EditorSnapshot; // SovereignBoard:
+import helium314.keyboard.tx.FactCheck; // SovereignBoard:
 import helium314.keyboard.tx.SovereignAddWord; // SovereignBoard:
 import helium314.keyboard.tx.SovereignToken; // SovereignBoard:
 import helium314.keyboard.tx.SovereignScreenshots; // SovereignBoard:
@@ -1070,6 +1071,7 @@ public class LatinIME extends InputMethodService implements
         super.onFinishInputView(finishingInput);
         Log.i(TAG, "onFinishInputView");
         SovereignUndo.forgetAll(); // SovereignBoard: keyboard hidden, no undo on offer
+        mKeyboardSwitcher.hideFactCheckPanel(); // SovereignBoard: the fact-check panel closes with the keyboard
         cleanupInternalStateForFinishInput();
     }
 
@@ -1450,6 +1452,22 @@ public class LatinIME extends InputMethodService implements
         AiCleanup.get(this).run(this);
     }
 
+    // SovereignBoard: the fact-check toolbar key. Finish the word being typed, then open the panel.
+    public void sovereignFactCheck() {
+        mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
+        FactCheck.INSTANCE.open(this);
+    }
+
+    // SovereignBoard: show / hide the fact-check panel in place of the keys.
+    @Nullable
+    public android.widget.FrameLayout sovereignShowFactCheckPanel() {
+        return mKeyboardSwitcher.showFactCheckPanel();
+    }
+
+    public void sovereignHideFactCheckPanel() {
+        mKeyboardSwitcher.hideFactCheckPanel();
+    }
+
     // SovereignBoard: long-press on the mic takes the last dictation back out.
     public void sovereignUndoDictation() {
         if (mDictationManager == null) mDictationManager = new DictationManager(this);
@@ -1777,9 +1795,17 @@ public class LatinIME extends InputMethodService implements
         feedbackManager.performAudioFeedback(code, hapticEvent);
     }
 
+    private boolean mSovereignBackTaken; // SovereignBoard: Back went to closing the fact-check panel
+
     // Hooks for hardware keyboard
     @Override
     public boolean onKeyDown(final int keyCode, final KeyEvent keyEvent) {
+        // SovereignBoard: Back closes the fact-check panel (keys come back) instead of the keyboard
+        if (keyCode == KeyEvent.KEYCODE_BACK && mKeyboardSwitcher.isShowingFactCheck()) {
+            mKeyboardSwitcher.hideFactCheckPanel();
+            mSovereignBackTaken = true;
+            return true;
+        }
         if (mKeyboardActionListener.onKeyDown(keyCode, keyEvent))
             return true;
         return super.onKeyDown(keyCode, keyEvent);
@@ -1787,6 +1813,10 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public boolean onKeyUp(final int keyCode, final KeyEvent keyEvent) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && mSovereignBackTaken) { // SovereignBoard: see onKeyDown
+            mSovereignBackTaken = false;
+            return true;
+        }
         if (mKeyboardActionListener.onKeyUp(keyCode, keyEvent))
             return true;
         return super.onKeyUp(keyCode, keyEvent);

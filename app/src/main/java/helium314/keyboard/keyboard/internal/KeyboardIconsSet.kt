@@ -158,6 +158,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.AI_CLEANUP -> R.drawable.ic_ai_cleanup // SovereignBoard:
+                    ToolbarKey.FACT_CHECK -> R.drawable.ic_fact_check // SovereignBoard:
                 })
             }
         } }
@@ -223,6 +224,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.AI_CLEANUP -> R.drawable.ic_ai_cleanup // SovereignBoard:
+                    ToolbarKey.FACT_CHECK -> R.drawable.ic_fact_check // SovereignBoard:
                 })
             }
         } }
@@ -288,6 +290,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
                     ToolbarKey.AI_CLEANUP -> R.drawable.ic_ai_cleanup // SovereignBoard:
+                    ToolbarKey.FACT_CHECK -> R.drawable.ic_fact_check // SovereignBoard:
                 })
             }
         } }

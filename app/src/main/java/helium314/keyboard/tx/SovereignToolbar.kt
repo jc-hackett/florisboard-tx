@@ -48,6 +48,7 @@ object SovereignToolbar {
     private const val PREF_EMOJI_KEY_MIGRATED = "sovereign_emoji_key_v1"
     private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
     private const val PREF_SPARKLE_BEFORE_MIC_MIGRATED = "sovereign_pinned_sparkle_before_mic_v1"
+    private const val PREF_FACT_CHECK_MIGRATED = "sovereign_pinned_fact_check_v1"
     /** Clipboard key icon: the theme's accent (crown red #D81B3C), no badge behind it. */
     private const val CLIPBOARD_TINT = SovereignTheme.ENTER
 
@@ -67,8 +68,8 @@ object SovereignToolbar {
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
             tokenBanner?.let { SovereignToken.checkIfDue(it.context) }
             combine(
-                DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered, SovereignToken.banner
-            ) { mic, busy, undo, banner -> Pair(Look(mic, busy, undo), banner) }
+                DictationManager.current, AiCleanup.busy, SovereignUndo.cleanupOffered, SovereignToken.banner, FactCheck.busy
+            ) { mic, busy, undo, banner, checking -> Pair(Look(mic, busy, undo, checking), banner) }
                 .collect { (look, banner) ->
                     apply(groups, look, force = true)
                     (tokenBanner as? TextView)?.let { SovereignToken.showOnKeyboardBanner(it, banner) }
@@ -81,10 +82,11 @@ object SovereignToolbar {
      * the current state are left alone, so this is cheap enough to call on every strip update.
      */
     fun refresh(groups: List<ViewGroup>) =
-        apply(groups, Look(DictationManager.current.value, AiCleanup.busy.value, SovereignUndo.cleanupOffered.value), force = false)
+        apply(groups, Look(DictationManager.current.value, AiCleanup.busy.value, SovereignUndo.cleanupOffered.value,
+            FactCheck.busy.value), force = false)
 
-    /** What the mic and ✨ keys should show. */
-    private data class Look(val mic: DictationState, val busy: Boolean, val undo: Boolean)
+    /** What the mic, ✨ and fact-check keys should show. */
+    private data class Look(val mic: DictationState, val busy: Boolean, val undo: Boolean, val checking: Boolean)
 
     /** The look last drawn on each key view, so [refresh] only touches views that are out of date. */
     private val drawn = WeakHashMap<ImageButton, Any>()
@@ -111,6 +113,13 @@ object SovereignToolbar {
                         // the grey "waiting for the server" dot breathes; the green recording dot stays steady
                         decorate(button, ToolbarKey.VOICE, micDot, strong = micLook.second, pulse = look.mic == DictationState.WORKING)
                         drawn[button] = micLook
+                    }
+                    ToolbarKey.FACT_CHECK -> {
+                        val factLook = "fact" to look.checking
+                        if (!force && drawn[button] == factLook) continue
+                        // the pink badge like ✨; a grey breathing dot while the check runs
+                        decorate(button, ToolbarKey.FACT_CHECK, if (look.checking) GREY else null, strong = look.checking, pulse = look.checking)
+                        drawn[button] = factLook
                     }
                     ToolbarKey.AI_CLEANUP -> {
                         if (!force && drawn[button] == sparkleLook) continue
@@ -200,6 +209,31 @@ object SovereignToolbar {
                 }
             }
             putBoolean(PREF_SPARKLE_BEFORE_MIC_MIGRATED, true)
+        }
+    }
+
+    /**
+     * One-time change, for existing installs: pin the fact-check key in the strip between ✨ and the
+     * mic (clipboard, ✨, fact check, mic). Fresh installs get this from the default pinned list.
+     */
+    fun migrateFactCheckKey(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_FACT_CHECK_MIGRATED, false)) return
+        prefs.edit {
+            prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, null)?.let { saved ->
+                val entries = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }.toMutableList()
+                val ours = ToolbarKey.FACT_CHECK.name + Separators.KV
+                entries.removeAll { it.startsWith(ours) }
+                val sparkle = entries.indexOfFirst { it.startsWith(ToolbarKey.AI_CLEANUP.name + Separators.KV) && it.endsWith("true") }
+                val mic = entries.indexOfFirst { it.startsWith(ToolbarKey.VOICE.name + Separators.KV) && it.endsWith("true") }
+                val at = when {
+                    sparkle >= 0 -> sparkle + 1
+                    mic >= 0 -> mic
+                    else -> entries.indexOfLast { it.endsWith("true") } + 1
+                }
+                entries.add(at, ours + "true")
+                putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
+            }
+            putBoolean(PREF_FACT_CHECK_MIGRATED, true)
         }
     }
 

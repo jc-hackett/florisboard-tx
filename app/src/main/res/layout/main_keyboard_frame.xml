@@ -35,6 +35,12 @@
         <include
             android:id="@+id/clipboard_history_view"
             layout="@layout/clipboard_history_view" />
+        <!-- SovereignBoard: the fact-check panel, shown in place of the keys (filled in from code) -->
+        <FrameLayout
+            android:id="@+id/fact_check_view"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/btn_stop_one_handed_mode"

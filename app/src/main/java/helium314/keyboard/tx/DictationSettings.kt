@@ -79,12 +79,18 @@ class DictationSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
 
+    /** The one-time "names aren't hidden" note in the fact-check panel has been seen and accepted. */
+    var factCheckNoteSeen: Boolean
+        get() = prefs.getBoolean(KEY_FACT_CHECK_NOTE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FACT_CHECK_NOTE, value).apply()
+
     companion object {
         private const val FILE = "dictation"
         private const val KEY_TOKEN_CHANGED_PENDING = "token_changed_pending"
         private const val KEY_OFFER_SCREENSHOTS = "offer_screenshots"
         private const val KEY_UPDATE_BUILD = "update_build"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
+        private const val KEY_FACT_CHECK_NOTE = "fact_check_note_seen"
         private const val KEY_TOKEN_REJECTED = "token_rejected"
         private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
         private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"

@@ -61,6 +61,7 @@ import helium314.keyboard.latin.utils.ResourceUtils;
 import helium314.keyboard.latin.utils.ScriptUtils;
 import helium314.keyboard.latin.utils.SubtypeUtilsAdditional;
 import helium314.keyboard.latin.utils.ToolbarMode;
+import helium314.keyboard.tx.FactCheck; // SovereignBoard:
 
 public final class KeyboardSwitcher {
     private static final String TAG = KeyboardSwitcher.class.getSimpleName();
@@ -76,6 +77,7 @@ public final class KeyboardSwitcher {
     private SuggestionStripView mSuggestionStripView;
     private FrameLayout mStripContainer;
     private ClipboardHistoryView mClipboardHistoryView;
+    private FrameLayout mFactCheckView; // SovereignBoard: the fact-check panel, shown in place of the keys
     private TextView mFakeToastView;
     private ImageView mBackgroundGatheringIndicator;
     private LatinIME mLatinIME;
@@ -239,6 +241,8 @@ public final class KeyboardSwitcher {
         mStripContainer.setVisibility(stripVisibility);
         PointerTracker.switchTo(mKeyboardView);
         mKeyboardView.setVisibility(visibility);
+        // SovereignBoard: a keyboard reload (shift state, field change) keeps the fact-check panel up
+        if (visibility == View.VISIBLE && isShowingFactCheck()) mKeyboardView.setVisibility(View.GONE);
         // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
         // @see #getVisibleKeyboardView() and
         // @see LatinIME#onComputeInset(android.inputmethodservice.InputMethodService.Insets)
@@ -485,8 +489,44 @@ public final class KeyboardSwitcher {
         return mStripContainer.isShown();
     }
 
+    // SovereignBoard: the fact-check panel takes the place of the keys, at the same height.
+    public boolean isShowingFactCheck() {
+        return mFactCheckView != null && mFactCheckView.getVisibility() == View.VISIBLE;
+    }
+
+    // SovereignBoard: show the (empty) fact-check panel where the keys are, the same height; returns it to fill.
+    @Nullable
+    public FrameLayout showFactCheckPanel() {
+        if (mFactCheckView == null || mKeyboardView == null || isShowingEmojiPalettes() || isShowingClipboardHistory())
+            return null;
+        int height = mKeyboardView.getHeight();
+        if (height <= 0) height = mKeyboardView.getMeasuredHeight();
+        if (height <= 0) height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        final ViewGroup.LayoutParams lp = mFactCheckView.getLayoutParams();
+        lp.height = height;
+        mFactCheckView.setLayoutParams(lp);
+        mFactCheckView.removeAllViews();
+        mKeyboardView.setVisibility(View.GONE);
+        mFactCheckView.setVisibility(View.VISIBLE);
+        return mFactCheckView;
+    }
+
+    // SovereignBoard: put the keys back. Safe to call when the panel isn't showing.
+    public void hideFactCheckPanel() {
+        if (mFactCheckView == null) return;
+        final boolean wasShowing = isShowingFactCheck();
+        mFactCheckView.setVisibility(View.GONE);
+        mFactCheckView.removeAllViews();
+        FactCheck.INSTANCE.onPanelHidden();
+        if (wasShowing && mKeyboardView != null && !isShowingEmojiPalettes() && !isShowingClipboardHistory()
+                && mMainKeyboardFrame != null && mMainKeyboardFrame.getVisibility() == View.VISIBLE)
+            mKeyboardView.setVisibility(View.VISIBLE);
+    }
+
     public View getVisibleKeyboardView() {
-        if (isShowingEmojiPalettes()) {
+        if (isShowingFactCheck()) { // SovereignBoard:
+            return mFactCheckView;
+        } else if (isShowingEmojiPalettes()) {
             return mEmojiPalettesView;
         } else if (isShowingClipboardHistory()) {
             return mClipboardHistoryView;
@@ -551,6 +591,8 @@ public final class KeyboardSwitcher {
         mMainKeyboardFrame = mCurrentInputView.findViewById(R.id.main_keyboard_frame);
         mEmojiPalettesView = mCurrentInputView.findViewById(R.id.emoji_palettes_view);
         mClipboardHistoryView = mCurrentInputView.findViewById(R.id.clipboard_history_view);
+        FactCheck.INSTANCE.onPanelHidden(); // SovereignBoard: a new input view starts without the panel
+        mFactCheckView = mCurrentInputView.findViewById(R.id.fact_check_view); // SovereignBoard:
         mFakeToastView = mCurrentInputView.findViewById(R.id.fakeToast);
 
         mKeyboardViewWrapper = mCurrentInputView.findViewById(R.id.keyboard_view_wrapper);
@@ -651,6 +693,7 @@ public final class KeyboardSwitcher {
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
             // @see LatinIME#onComputeInset(android.inputmethodservice.InputMethodService.Insets)
+            hideFactCheckPanel(); // SovereignBoard:
             mKeyboardView.setVisibility(View.GONE);
             mSuggestionStripView.setVisibility(View.GONE);
             mStripContainer.setVisibility(getSecondaryStripVisibility());
@@ -671,6 +714,7 @@ public final class KeyboardSwitcher {
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
             // @see LatinIME#onComputeInset(android.inputmethodservice.InputMethodService.Insets)
+            hideFactCheckPanel(); // SovereignBoard:
             mKeyboardView.setVisibility(View.GONE);
             mEmojiTabStripView.setVisibility(View.GONE);
             mSuggestionStripView.setVisibility(View.GONE);

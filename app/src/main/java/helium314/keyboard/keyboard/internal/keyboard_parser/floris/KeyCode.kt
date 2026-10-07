@@ -186,6 +186,7 @@ object KeyCode {
     const val DPAD =                      -10054
     const val AI_CLEANUP =                -10900 // SovereignBoard: the ✨ toolbar key
     const val DICTATION_UNDO =            -10901 // SovereignBoard: long-press on the mic, takes the last dictation out
+    const val FACT_CHECK =                -10902 // SovereignBoard: the fact-check toolbar key
 
     // Valid in popups and for toolbar key long press only
     const val KEY_REPEAT =                -11000
@@ -214,7 +215,7 @@ object KeyCode {
         TIMESTAMP, CTRL_LEFT, CTRL_RIGHT, ALT_LEFT, ALT_RIGHT, META_LEFT, META_RIGHT, SEND_INTENT_ONE, SEND_INTENT_TWO,
         SEND_INTENT_THREE, EMOJI_SEARCH, INLINE_EMOJI_SEARCH_DONE, META_LOCK,
         BACKGROUND_GATHERING, BACKGROUND_GATHERING_TEMP_OFF, DPAD,
-        AI_CLEANUP, DICTATION_UNDO, // SovereignBoard:
+        AI_CLEANUP, DICTATION_UNDO, FACT_CHECK, // SovereignBoard:
         -> this
 
         KEY_REPEAT if (longPress) -> this

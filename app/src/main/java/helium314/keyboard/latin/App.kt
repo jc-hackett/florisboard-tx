@@ -51,6 +51,7 @@ class App : Application() {
         SovereignToolbar.migrateSparkleBeforeMic(prefs()) // SovereignBoard: pinned keys clipboard, ✨, mic (mic at the edge) once
         SovereignTheme.migrate(prefs()) // SovereignBoard: pink day theme once
         SovereignToolbar.migrateEmojiKey(prefs()) // SovereignBoard: emoji key on the bottom row once
+        SovereignToolbar.migrateFactCheckKey(prefs()) // SovereignBoard: pin the fact-check key between ✨ and mic once
         if (BuildConfig.DEBUG) // do this on every debug apk start because we may work on adding a new toolbar key
             upgradeToolbarPrefs(prefs())
         transferOldPinnedClips(this) // todo: remove in a few months, maybe end 2026
