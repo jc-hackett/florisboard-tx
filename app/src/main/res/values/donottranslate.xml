@@ -72,6 +72,15 @@
 
     <string name="english_ime_name" translatable="false">SovereignBoard</string>
     <!-- App slogan-->
-    <string name="app_slogan" translatable="false">100% FOSS keyboard, based on AOSP.</string>
+    <!-- SovereignBoard: About screen rebrand (untranslated on purpose, so no locale shows HeliBoard's wiki/community wording) -->
+    <string name="app_slogan" translatable="false">Private dictation and AI proofreading. Based on HeliBoard (AOSP).</string>
+    <string name="sovereign_version_text" translatable="false">Version %1$s (HeliBoard %2$s)</string>
+    <string name="sovereign_version_checking" translatable="false">checking</string>
+    <string name="sovereign_help" translatable="false">Help</string>
+    <string name="sovereign_help_summary" translatable="false">Common problems and fixes</string>
+    <string name="sovereign_whats_new" translatable="false">"What's new"</string>
+    <string name="sovereign_whats_new_summary" translatable="false">Changes in each version</string>
+    <string name="sovereign_source" translatable="false">Source code</string>
+    <string name="sovereign_source_summary" translatable="false">"SovereignBoard's code on GitHub"</string>
 
 </resources>

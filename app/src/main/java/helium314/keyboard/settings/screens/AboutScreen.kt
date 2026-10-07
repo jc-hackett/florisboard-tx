@@ -13,7 +13,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,6 +48,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import androidx.core.content.edit
 import helium314.keyboard.latin.utils.IntentUtils
+import helium314.keyboard.tx.SovereignVersion
 import java.util.Locale
 
 @Composable
@@ -81,9 +85,19 @@ fun createAboutSettings(context: Context) = listOf(
         var count by rememberSaveable { mutableIntStateOf(0) }
         val ctx = LocalContext.current
         val prefs = ctx.prefs()
+        // SovereignBoard: our release number from versions.json (cached), falling back to the short commit
+        var ours by remember { mutableStateOf(SovereignVersion.cached(ctx)) }
+        var checking by remember { mutableStateOf(ours == null) }
+        LaunchedEffect(Unit) {
+            if (ours == null) {
+                ours = SovereignVersion.lookup(ctx)
+                checking = false
+            }
+        }
+        val shown = ours ?: if (checking) stringResource(R.string.sovereign_version_checking) else SovereignVersion.shortBuild
         Preference(
             name = it.title,
-            description = stringResource(R.string.version_text, BuildConfig.VERSION_NAME),
+            description = stringResource(R.string.sovereign_version_text, shown, BuildConfig.VERSION_NAME),
             onClick = {
                 if (prefs.getBoolean(DebugSettings.PREF_SHOW_DEBUG_SETTINGS, Defaults.PREF_SHOW_DEBUG_SETTINGS) || BuildConfig.DEBUG)
                     return@Preference
@@ -133,42 +147,45 @@ fun createAboutSettings(context: Context) = listOf(
             icon = R.drawable.ic_settings_about_hidden_features
         )
     },
-    Setting(context, SettingsWithoutKey.GITHUB_WIKI, R.string.about_wiki_link, R.string.about_wiki_link_description) {
+    // SovereignBoard: "Help" page on our site instead of HeliBoard's wiki
+    Setting(context, SettingsWithoutKey.GITHUB_WIKI, R.string.sovereign_help, R.string.sovereign_help_summary) {
         val ctx = LocalContext.current
         Preference(
             name = it.title,
             description = it.description,
             onClick = {
                 val intent = Intent()
-                intent.data = Links.WIKI_URL.toUri()
+                intent.data = SovereignVersion.HELP_URL.toUri()
                 intent.action = Intent.ACTION_VIEW
                 ctx.startActivity(intent)
             },
             icon = R.drawable.ic_settings_about_wiki
         )
     },
-    Setting(context, SettingsWithoutKey.COMMUNITY_LINKS, R.string.about_community_links, R.string.about_community_links_description) {
+    // SovereignBoard: "What's new" page instead of HeliBoard's community links
+    Setting(context, SettingsWithoutKey.COMMUNITY_LINKS, R.string.sovereign_whats_new, R.string.sovereign_whats_new_summary) {
         val ctx = LocalContext.current
         Preference(
             name = it.title,
             description = it.description,
             onClick = {
                 val intent = Intent()
-                intent.data = Links.COMMUNITY_LINKS.toUri()
+                intent.data = SovereignVersion.WHATS_NEW_URL.toUri()
                 intent.action = Intent.ACTION_VIEW
                 ctx.startActivity(intent)
             },
             icon = R.drawable.ic_settings_about_community
         )
      },
-    Setting(context, SettingsWithoutKey.GITHUB, R.string.about_github_link) {
+    // SovereignBoard: link to our source (GPL), not upstream's
+    Setting(context, SettingsWithoutKey.GITHUB, R.string.sovereign_source, R.string.sovereign_source_summary) {
         val ctx = LocalContext.current
         Preference(
             name = it.title,
             description = it.description,
             onClick = {
                 val intent = Intent()
-                intent.data = Links.GITHUB.toUri()
+                intent.data = SovereignVersion.SOURCE_URL.toUri()
                 intent.action = Intent.ACTION_VIEW
                 ctx.startActivity(intent)
             },

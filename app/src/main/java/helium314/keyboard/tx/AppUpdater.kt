@@ -38,7 +38,7 @@ class AppUpdater(context: Context) {
 
     /** Returns the newer release, or null when this is already the latest. Throws on failure. */
     suspend fun check(): Release? = withContext(Dispatchers.IO) {
-        val o = JSONObject(get("$BASE/latest.json").toString(Charsets.UTF_8))
+        val o = JSONObject(fetch("$BASE/latest.json").toString(Charsets.UTF_8))
         val build = o.getString("build")
         if (build.equals(currentBuild, ignoreCase = true)) return@withContext null
         Release(
@@ -105,21 +105,22 @@ class AppUpdater(context: Context) {
         appContext.startActivity(intent)
     }
 
-    private fun get(url: String): ByteArray {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 10_000
-        conn.useCaches = false
-        try {
-            if (conn.responseCode !in 200..299) error("server answered ${conn.responseCode}")
-            return conn.inputStream.use { it.readBytes() }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
     companion object {
         const val BASE = "https://dictate.limn.dev/app/beta-h"
+
+        /** Plain GET; also used by [SovereignVersion]. Throws on failure. */
+        fun fetch(url: String): ByteArray {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.useCaches = false
+            try {
+                if (conn.responseCode !in 200..299) error("server answered ${conn.responseCode}")
+                return conn.inputStream.use { it.readBytes() }
+            } finally {
+                conn.disconnect()
+            }
+        }
     }
 }
 
