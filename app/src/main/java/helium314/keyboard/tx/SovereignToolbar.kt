@@ -42,6 +42,7 @@ object SovereignToolbar {
     private const val PREF_TRIM_MIGRATED = "sovereign_toolbar_trim_v1"
     private const val PREF_STRIP_CLEANUP_MIGRATED = "sovereign_strip_cleanup_v1"
     private const val PREF_CLIP_RETENTION_MIGRATED = "sovereign_clip_retention_60_v1"
+    private const val PREF_EMOJI_KEY_MIGRATED = "sovereign_emoji_key_v1"
     private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
 
     /** Keys taken out of the expanded toolbar; mic and ✨ stay pinned in the suggestion strip. */
@@ -214,6 +215,15 @@ object SovereignToolbar {
      * One-time change, for existing installs: keep clipboard history for 60 minutes instead of 10, but
      * only if the old default of 10 is still set (a value the user picked is left alone).
      */
+    /** One-time change, for existing installs: show the emoji key next to the space bar. */
+    fun migrateEmojiKey(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_EMOJI_KEY_MIGRATED, false)) return
+        prefs.edit {
+            putBoolean(Settings.PREF_SHOW_EMOJI_KEY, true)
+            putBoolean(PREF_EMOJI_KEY_MIGRATED, true)
+        }
+    }
+
     fun migrateClipboardRetention(prefs: SharedPreferences) {
         if (prefs.getBoolean(PREF_CLIP_RETENTION_MIGRATED, false)) return
         prefs.edit {

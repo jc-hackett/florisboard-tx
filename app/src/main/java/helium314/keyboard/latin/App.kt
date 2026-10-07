@@ -49,6 +49,7 @@ class App : Application() {
         SovereignToolbar.migrateClipboardRetention(prefs()) // SovereignBoard: clipboard history 10 -> 60 minutes once
         SovereignToolbar.migrateToolbarNoClipboard(prefs()) // SovereignBoard: clipboard only pinned in the strip, not in the toolbar, once
         SovereignTheme.migrate(prefs()) // SovereignBoard: pink day theme once
+        SovereignToolbar.migrateEmojiKey(prefs()) // SovereignBoard: emoji key on the bottom row once
         if (BuildConfig.DEBUG) // do this on every debug apk start because we may work on adding a new toolbar key
             upgradeToolbarPrefs(prefs())
         transferOldPinnedClips(this) // todo: remove in a few months, maybe end 2026

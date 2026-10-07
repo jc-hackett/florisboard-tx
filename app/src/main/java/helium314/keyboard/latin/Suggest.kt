@@ -124,7 +124,9 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
                     && isAllowedByAutoCorrectionWithSpaceFilter(first)
             } == true
             && mDictionaryFacilitator.hasAtLeastOneInitializedMainDictionary()
-        val willAutoCorrect = hasAutoCorrection || sovereignForceCorrection // SovereignBoard:
+        // SovereignBoard: an emoji is only ever offered, never put in by space (the first is an emoji only when
+        //  no word suggestion exists at all; see makeFirstTwoSuggestionsNonEmoji)
+        val willAutoCorrect = (hasAutoCorrection || sovereignForceCorrection) && suggestionsContainer.firstOrNull()?.isEmoji != true
         val typedWordInfo = SuggestedWordInfo(typedWordString, "", SuggestedWordInfo.MAX_SCORE,
             SuggestedWordInfo.KIND_TYPED, typedWordFirstOccurrenceWordInfo?.mSourceDict ?: Dictionary.DICTIONARY_USER_TYPED,
             SuggestedWordInfo.NOT_AN_INDEX , SuggestedWordInfo.NOT_A_CONFIDENCE)
