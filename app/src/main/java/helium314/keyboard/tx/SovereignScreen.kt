@@ -77,6 +77,13 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var token by remember { mutableStateOf(settings.token) }
     // The saved token stays locked until "Change access token" is tapped (always open while empty).
     var editingToken by remember { mutableStateOf(settings.token.isBlank()) }
+    // A key picked up from the clipboard by itself (SovereignToken.autoFillFromClipboard): show it as saved.
+    val autoSaved by SovereignToken.autoSaved.collectAsState()
+    LaunchedEffect(autoSaved) {
+        if (autoSaved == 0) return@LaunchedEffect
+        token = settings.token
+        if (token.isNotBlank()) editingToken = false
+    }
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var copyDictation by remember { mutableStateOf(settings.addToClipboardHistory) }
@@ -425,7 +432,8 @@ fun SovereignScreen(onClickBack: () -> Unit) {
 
                 Text("Clipboard key", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Long-press the clipboard key in the strip for two quick actions. Pick them here.",
+                    "Swipe down on the clipboard key in the strip (or long-press it) for two quick actions " +
+                        "and fact check. Pick the two actions here.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 val prefs = remember { ctx.prefs() }
@@ -471,7 +479,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
 
 /**
  * "Colours": the Enter key (the SovereignBoard theme's accent, which the swipe trail follows too) and
- * the pinned hotkey icons (clipboard, ✨, fact check, mic, and the clipboard bubble), which follow the
+ * the pinned hotkey icons (clipboard, ✨, mic, and the clipboard bubble), which follow the
  * Enter colour until given their own.
  */
 @Composable
@@ -489,7 +497,7 @@ private fun SovereignColours() {
     }
     ColourRow(
         "Hotkey icons",
-        "Clipboard, ✨, fact check and mic in the strip, and the clipboard bubble. " +
+        "Clipboard, ✨ and mic in the strip, and the clipboard bubble (fact check stays red). " +
             if (ownHotkey) "Own colour." else "Same as the Enter key until you change it.",
         hotkey,
     ) { picking = "hotkey" }

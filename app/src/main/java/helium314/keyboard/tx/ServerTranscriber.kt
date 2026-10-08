@@ -42,8 +42,10 @@ interface Transcriber {
     /**
      * Captures audio until [stillRecording] returns false, then returns the finished text, or null
      * if nothing usable was said. Throws [DictationException] with a user-facing message on failure.
+     * [midSentence]: the cursor sits inside a sentence, so the server shouldn't start with a capital
+     * (only that flag is sent, never the text around the cursor).
      */
-    suspend fun transcribe(stillRecording: () -> Boolean): Transcript?
+    suspend fun transcribe(stillRecording: () -> Boolean, midSentence: Boolean = false): Transcript?
 }
 
 /**
@@ -53,7 +55,7 @@ interface Transcriber {
 class ServerTranscriber(context: Context) : Transcriber {
     private val appContext = context.applicationContext
 
-    override suspend fun transcribe(stillRecording: () -> Boolean): Transcript? {
+    override suspend fun transcribe(stillRecording: () -> Boolean, midSentence: Boolean): Transcript? {
         val settings = DictationSettings(appContext)
         val server = settings.serverUrl
         val token = settings.token
@@ -72,7 +74,7 @@ class ServerTranscriber(context: Context) : Transcriber {
                 // Recording never waits on the network: chunks queue here while the connection
                 // is still being set up, and the uploader drains them as fast as it can.
                 val chunks = Channel<ByteArray>(Channel.UNLIMITED)
-                val upload = async { stream(server, token, words, keep, chunks) }
+                val upload = async { stream(server, token, words, keep, midSentence, chunks) }
                 val recorded = try {
                     record(stillRecording) { chunks.trySend(it) }
                 } finally {
@@ -128,6 +130,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         token: String,
         words: List<String>,
         keep: Boolean,
+        midSentence: Boolean,
         chunks: ReceiveChannel<ByteArray>,
     ): Transcript? {
         val conn = (URL(server.trimEnd('/') + "/v1/dictate/stream").openConnection() as HttpURLConnection).apply {
@@ -142,6 +145,8 @@ class ServerTranscriber(context: Context) : Transcriber {
             if (words.isNotEmpty()) {
                 setRequestProperty("X-Dictate-Words", URLEncoder.encode(words.joinToString("\n"), "UTF-8"))
             }
+            // A flag only: the text around the cursor never leaves the phone.
+            if (midSentence) setRequestProperty("X-Dictate-Context", "mid-sentence")
             // Opt-in only ("Save my recordings"): without this header the server stores nothing.
             if (keep) {
                 setRequestProperty("X-Dictate-Keep", "1")

@@ -2,6 +2,7 @@
 // SovereignBoard: the red banner, shown in the keyboard (over the suggestion strip) and along the bottom
 // of the settings screens: "Enter your access token" while no token is saved or the server rejects the
 // saved one; "Your access token has been changed" for a few seconds after a new token checks out;
+// "Key saved — you're ready" when a key copied from the setup page was picked up from the clipboard by itself;
 // "Microphone not allowed — tap to allow" while the microphone permission is missing (in the keyboard only
 // after the mic was tapped; at the top of the settings screens); and "Update available — tap to install"
 // when a newer build is out. The token messages win, then the microphone, then updates.
@@ -45,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.isVisible
@@ -68,6 +70,7 @@ import kotlin.math.abs
 enum class SovereignBanner(val text: String) {
     TOKEN(SovereignToken.BANNER_TEXT),
     TOKEN_CHANGED("Your access token has been changed"),
+    KEY_SAVED("Key saved — you're ready"),
     MIC(SovereignToken.MIC_TEXT),
     UPDATE("Update available — tap to install"),
 }
@@ -98,7 +101,12 @@ object SovereignToken {
     /** True while the banner should show. */
     val problem: StateFlow<Boolean> = _problem.asStateFlow()
 
-    private val _changedFlash = MutableStateFlow(false)
+    /** A short-lived message (token changed / key saved), shown for a few seconds. */
+    private val _changedFlash = MutableStateFlow<SovereignBanner?>(null)
+
+    private val _autoSaved = MutableStateFlow(0)
+    /** Goes up each time a key was picked up from the clipboard and saved: the settings screen re-reads it. */
+    val autoSaved: StateFlow<Int> = _autoSaved.asStateFlow()
 
     private val _micMissing = MutableStateFlow(false)
     /** True while the app lacks the microphone permission (re-read with [refreshMic]). */
@@ -121,9 +129,9 @@ object SovereignToken {
             pick(problem, changed, mic, update)
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    private fun pick(problem: Boolean, changed: Boolean, mic: Boolean, update: Boolean) = when {
+    private fun pick(problem: Boolean, flash: SovereignBanner?, mic: Boolean, update: Boolean) = when {
         problem -> SovereignBanner.TOKEN
-        changed -> SovereignBanner.TOKEN_CHANGED
+        flash != null -> flash
         mic -> SovereignBanner.MIC
         update -> SovereignBanner.UPDATE
         else -> null
@@ -189,6 +197,7 @@ object SovereignToken {
     @JvmStatic
     fun onKeyboardOpened(context: Context) {
         checkIfDue(context)
+        autoFillFromClipboard(context) // the keyboard, as the default input method, may read the clipboard
         refreshMic(context)
         val s = DictationSettings(context)
         if (s.tokenChangedPending) {
@@ -198,11 +207,11 @@ object SovereignToken {
         SovereignUpdates.checkIfDue(context)
     }
 
-    private fun flashChanged() {
+    private fun flashChanged(kind: SovereignBanner = SovereignBanner.TOKEN_CHANGED) {
         scope.launch {
-            _changedFlash.value = true
+            _changedFlash.value = kind
             delay(CHANGED_FLASH_MS)
-            _changedFlash.value = false
+            if (_changedFlash.value == kind) _changedFlash.value = null
         }
     }
 
@@ -239,6 +248,7 @@ object SovereignToken {
                         401, 403 -> if (DictationSettings(appContext).token == token) onRejected(appContext)
                         in 200..299 -> if (DictationSettings(appContext).token == token) {
                             onAccepted(appContext)
+                            readServerWords(conn)?.let { DictationSettings(appContext).serverWords = it }
                             if (announceChange) {
                                 DictationSettings(appContext).tokenChangedPending = true
                                 flashChanged()
@@ -252,6 +262,90 @@ object SovereignToken {
                 // offline or server down: says nothing about the token
             } finally {
                 checking = false
+            }
+        }
+    }
+
+    /** The server's word list from a GET /v1/words reply, one per line; null if it can't be read. */
+    private fun readServerWords(conn: HttpURLConnection): String? = runCatching {
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        val list = org.json.JSONObject(body).optJSONArray("words") ?: return null
+        (0 until list.length()).mapNotNull { list.optString(it).trim().takeIf { w -> w.isNotEmpty() } }
+            .take(2000).joinToString("\n")
+    }.getOrNull()
+
+    /**
+     * Shape of a SovereignBoard key: "dt_" + secrets.token_urlsafe(32) on the server (make-invite.py,
+     * add-token.py, the admin page), i.e. 43 url-safe characters after the prefix.
+     */
+    private val KEY_SHAPE = Regex("^dt_[A-Za-z0-9_-]{43}$")
+    /** Clipboard keys already tried and refused by the server, so they aren't sent again and again. */
+    private val refusedKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    @Volatile private var autoFilling = false
+
+    /** A SovereignBoard key on the clipboard, if that is what it holds (null if unreadable). */
+    private fun clipboardKey(context: Context): String? = runCatching {
+        val cm = context.getSystemService(android.content.ClipboardManager::class.java) ?: return null
+        val clip = cm.primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+        clip.getItemAt(0).coerceToText(context)?.toString()?.trim()?.takeIf { KEY_SHAPE.matches(it) }
+    }.getOrNull()
+
+    /**
+     * Key auto-fill. When no key is saved, or the server refused the saved one, and the clipboard holds a
+     * SovereignBoard key: check it with the server (GET /v1/words) and, if it is good, save it and say
+     * "Key saved — you're ready". A key that works is never replaced this way. Needs the caller to be
+     * allowed to read the clipboard (Android 10+: the focused app, or the default keyboard).
+     */
+    @JvmStatic
+    fun autoFillFromClipboard(context: Context) {
+        val appContext = context.applicationContext
+        val s = DictationSettings(appContext)
+        if (s.token.isNotBlank() && !s.tokenRejected) return
+        if (autoFilling) return
+        val candidate = clipboardKey(context) ?: return
+        if (candidate == s.token || candidate in refusedKeys) return
+        val server = s.serverUrl
+        if (!server.startsWith("https://")) return
+        autoFilling = true
+        scope.launch {
+            try {
+                val conn = (URL(server.trimEnd('/') + "/v1/words").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 5_000
+                    readTimeout = 8_000
+                    useCaches = false
+                    setRequestProperty("Authorization", "Bearer $candidate")
+                }
+                try {
+                    when (conn.responseCode) {
+                        401, 403 -> refusedKeys.add(candidate)
+                        in 200..299 -> {
+                            val words = readServerWords(conn)
+                            val now = DictationSettings(appContext)
+                            // still needed? (a key may have been saved meanwhile)
+                            if (now.token.isBlank() || now.tokenRejected) {
+                                now.token = candidate
+                                now.tokenRejected = false
+                                now.lastTokenCheck = System.currentTimeMillis()
+                                if (words != null) now.serverWords = words
+                                _problem.value = false
+                                _autoSaved.value += 1
+                                flashChanged(SovereignBanner.KEY_SAVED)
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    android.widget.Toast.makeText(appContext, SovereignBanner.KEY_SAVED.text,
+                                        android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (_: Exception) {
+                // offline: try again next time
+            } finally {
+                autoFilling = false
             }
         }
     }
@@ -289,7 +383,7 @@ object SovereignToken {
             SovereignBanner.TOKEN -> openSettings(context)
             SovereignBanner.UPDATE -> openUpdate(context)
             SovereignBanner.MIC -> openSovereign(context) // the keyboard can't ask for a permission itself
-            SovereignBanner.TOKEN_CHANGED, null -> Unit
+            SovereignBanner.TOKEN_CHANGED, SovereignBanner.KEY_SAVED, null -> Unit
         }
     }
 
@@ -317,7 +411,8 @@ object SovereignToken {
         view.isVisible = kind != null
         if (kind == null) return
         view.text = kind.text
-        view.contentDescription = if (kind == SovereignBanner.TOKEN_CHANGED) kind.text else "${kind.text}. Opens settings."
+        view.contentDescription = if (kind == SovereignBanner.TOKEN_CHANGED || kind == SovereignBanner.KEY_SAVED) kind.text
+            else "${kind.text}. Opens settings."
     }
 }
 
@@ -350,7 +445,7 @@ fun SovereignTokenBanner(onOpenSovereign: () -> Unit, atTop: Boolean) {
                     SovereignBanner.TOKEN -> { SovereignToken.requestTokenFocus(); onOpenSovereign() }
                     SovereignBanner.UPDATE -> { SovereignUpdates.requestInstall(); onOpenSovereign() }
                     SovereignBanner.MIC -> micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    SovereignBanner.TOKEN_CHANGED -> Unit
+                    SovereignBanner.TOKEN_CHANGED, SovereignBanner.KEY_SAVED -> Unit
                 }
             }
             .then(if (atTop) Modifier.statusBarsPadding() else Modifier.navigationBarsPadding())
@@ -382,6 +477,12 @@ fun WithTokenBanner(onOpenSovereign: () -> Unit, content: @Composable () -> Unit
     LaunchedEffect(Unit) {
         SovereignToken.refresh(ctx)
         SovereignUpdates.checkIfDue(ctx)
+    }
+    // Key auto-fill: whenever a settings screen has the focus (opened, resumed, back from another app),
+    // look for a key on the clipboard. Android 10+ only lets the focused app read it, so wait for focus.
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused) {
+        if (windowFocused) SovereignToken.autoFillFromClipboard(ctx)
     }
     // the microphone banner goes as soon as the permission is granted, also from the system's settings page
     LifecycleResumeEffect(Unit) {

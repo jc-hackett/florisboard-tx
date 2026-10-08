@@ -49,6 +49,7 @@ object SovereignToolbar {
     private const val PREF_TOOLBAR_NO_CLIPBOARD_MIGRATED = "sovereign_toolbar_no_clipboard_v1"
     private const val PREF_SPARKLE_BEFORE_MIC_MIGRATED = "sovereign_pinned_sparkle_before_mic_v1"
     private const val PREF_FACT_CHECK_MIGRATED = "sovereign_pinned_fact_check_v1"
+    private const val PREF_FACT_CHECK_UNPINNED = "sovereign_pinned_no_fact_check_v1"
     /** The strip's own background for each key, put back when ✨ leaves its undo state. */
     private val plainBackground = WeakHashMap<ImageButton, Drawable?>()
 
@@ -106,9 +107,15 @@ object SovereignToolbar {
                 val button = group.getChildAt(i) as? ImageButton ?: continue
                 when (button.tag) {
                     ToolbarKey.CLIPBOARD -> {
-                        val clipLook = "clip" to tint
+                        // fact check now lives in the clipboard bubble: its breathing grey dot shows here
+                        val caret = SovereignClipboardPopup.hasSwipe(button)
+                        val clipLook = listOf("clip", look.checking, tint, caret)
                         if (!force && drawn[button] == clipLook) continue
-                        decorate(button, ToolbarKey.CLIPBOARD, null, tint)
+                        decorate(button, ToolbarKey.CLIPBOARD, if (look.checking) GREY else null, tint, pulse = look.checking)
+                        if (caret) button.background = android.graphics.drawable.LayerDrawable(
+                            arrayOf(plainBackground[button] ?: android.graphics.drawable.ColorDrawable(Color.TRANSPARENT),
+                                CaretDrawable(button.resources.displayMetrics.density))
+                        )
                         drawn[button] = clipLook
                     }
                     ToolbarKey.VOICE -> {
@@ -228,6 +235,26 @@ object SovereignToolbar {
     }
 
     /**
+     * One-time change, for existing installs: take the fact-check key out of the strip (clipboard, ✨, mic);
+     * fact check now sits in the clipboard bubble. Fresh installs get this from the default pinned list.
+     */
+    fun migrateUnpinFactCheck(prefs: SharedPreferences) {
+        if (prefs.getBoolean(PREF_FACT_CHECK_UNPINNED, false)) return
+        prefs.edit {
+            prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, null)?.let { saved ->
+                val ours = ToolbarKey.FACT_CHECK.name + Separators.KV
+                val entries = saved.split(Separators.ENTRY).filter { it.isNotEmpty() }
+                    .map { if (it.startsWith(ours)) ours + "false" else it }.toMutableList()
+                // unpinned keys go after the pinned ones, like the default list
+                val fact = entries.indexOfFirst { it.startsWith(ours) }
+                if (fact >= 0) { entries.removeAt(fact); entries.add(ours + "false") }
+                putString(Settings.PREF_PINNED_TOOLBAR_KEYS, entries.joinToString(Separators.ENTRY))
+            }
+            putBoolean(PREF_FACT_CHECK_UNPINNED, true)
+        }
+    }
+
+    /**
      * One-time change, for existing installs, so the mic and ✨ are always on screen:
      * - switch off "auto show toolbar": with it on, an empty box (or no suggestions) swaps the strip
      *   for the expanded toolbar, hiding the pinned keys. The toolbar stays one tap away on the caret.
@@ -342,6 +369,39 @@ object SovereignToolbar {
         val at = entries.indexOfFirst { it.startsWith(ToolbarKey.VOICE.name + Separators.KV) }
         entries.add(if (at >= 0) at + 1 else 0, ToolbarKey.AI_CLEANUP.name + Separators.KV + "true")
         return entries.joinToString(Separators.ENTRY)
+    }
+
+    /**
+     * A small muted chevron pointing down, drawn in the clipboard key's background just under its icon:
+     * a hint that a swipe down opens the bubble. Not part of the icon, so the icon's tint leaves it alone.
+     */
+    private class CaretDrawable(private val density: Float) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x8C9E9E9E.toInt() // muted grey
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f * density
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        private val path = android.graphics.Path()
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            val halfW = 4f * density // ~8dp wide
+            val h = 2.5f * density
+            val cx = b.exactCenterX()
+            val bottom = b.bottom - 3f * density
+            path.reset()
+            path.moveTo(cx - halfW, bottom - h)
+            path.lineTo(cx, bottom)
+            path.lineTo(cx + halfW, bottom - h)
+            canvas.drawPath(path, paint)
+        }
+
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(colorFilter: ColorFilter?) { }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
     /** A filled circle centred in the key, sized to the shorter side; [pressed] colour while touched. */

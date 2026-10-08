@@ -144,9 +144,9 @@ val defaultToolbarPref by lazy {
             others.joinToString(Separators.ENTRY) { it.name + Separators.KV + false }
 }
 
-// SovereignBoard: clipboard history, ✨, fact check, then the mic (at the far right edge) pinned in the
-//  suggestion strip, next to the word suggestions
-private val sovereignPinned = listOf(CLIPBOARD, AI_CLEANUP, FACT_CHECK, VOICE)
+// SovereignBoard: clipboard history, ✨, then the mic (at the far right edge) pinned in the suggestion strip,
+//  next to the word suggestions (fact check lives in the clipboard key's bubble)
+private val sovereignPinned = listOf(CLIPBOARD, AI_CLEANUP, VOICE)
 val defaultPinnedToolbarPref = (sovereignPinned + entries.filterNot { it == CLOSE_HISTORY || it in sovereignPinned })
     .joinToString(Separators.ENTRY) { it.name + Separators.KV + (it in sovereignPinned) }
 

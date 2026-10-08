@@ -229,6 +229,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             button.layoutParams = toolbarKeyLayoutParams
             setupKey(button, colors)
             pinnedKeys.addView(button)
+            if (pinnedKey == ToolbarKey.CLIPBOARD) attachClipboardSwipe(button) // SovereignBoard:
             val pinnedKeyInToolbar = toolbar.findViewWithTag<View>(pinnedKey)
             if (pinnedKeyInToolbar != null && Settings.getValues().mQuickPinToolbarKeys)
                 pinnedKeyInToolbar.background = enabledToolKeyBackground
@@ -451,7 +452,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             return true
         }
         // SovereignBoard: long-press on the pinned clipboard key opens a bubble with two hotkeys (set in
-        //  SovereignBoard settings) instead of pasting
+        //  SovereignBoard settings) and fact check, instead of pasting (a swipe down opens it too)
         if (view.tag == ToolbarKey.CLIPBOARD && view.parent === pinnedKeys) {
             AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
             SovereignClipboardPopup.show(view) {
@@ -654,7 +655,15 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         copy.isActivated = original.isActivated
         setupKey(copy, Settings.getValues().mColors)
         pinnedKeys.addView(copy)
+        if (pinnedKey == ToolbarKey.CLIPBOARD) attachClipboardSwipe(copy) // SovereignBoard:
         SovereignToolbar.refresh(listOf(pinnedKeys)) // SovereignBoard: keep the mic / ✨ look on a newly pinned key
+    }
+
+    // SovereignBoard: a swipe down on the pinned clipboard key opens the same bubble as a long-press
+    private fun attachClipboardSwipe(view: View) {
+        SovereignClipboardPopup.attachSwipe(view) {
+            listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false)
+        }
     }
 
     private fun setupKey(view: ImageButton, colors: Colors) {

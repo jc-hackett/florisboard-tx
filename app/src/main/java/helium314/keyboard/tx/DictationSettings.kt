@@ -50,6 +50,14 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_KEEP_RECORDINGS, false)
         set(value) = prefs.edit().putBoolean(KEY_KEEP_RECORDINGS, value).apply()
 
+    /**
+     * The server's own word list (from GET /v1/words, one per line), kept so a dictation into the middle
+     * of a sentence can tell a name ("Erin") from an ordinary word that only got a capital at the start.
+     */
+    var serverWords: String
+        get() = prefs.getString(KEY_SERVER_WORDS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SERVER_WORDS, value).apply()
+
     /** The server answered 401 / 403 to the saved token; cleared when a call with it succeeds. */
     var tokenRejected: Boolean
         get() = prefs.getBoolean(KEY_TOKEN_REJECTED, false)
@@ -92,6 +100,7 @@ class DictationSettings(context: Context) {
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         private const val KEY_FACT_CHECK_NOTE = "fact_check_note_seen"
         private const val KEY_TOKEN_REJECTED = "token_rejected"
+        private const val KEY_SERVER_WORDS = "server_words"
         private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
         private const val KEY_COPY_TO_CLIPBOARD = "copy_to_clipboard"
         private const val KEY_KEEP_RECORDINGS = "keep_recordings"

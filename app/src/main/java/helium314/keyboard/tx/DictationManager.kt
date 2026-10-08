@@ -109,13 +109,15 @@ class DictationManager(private val ime: InputMethodService) {
         }
         capturing = true
         _state.value = DictationState.RECORDING
+        // Where the dictation will land, read now so the server can be told (a flag, no text).
+        val midSentence = DictationCasing.isMidSentence(textBeforeCursor())
         sessionJob = scope.launch {
             val hardStop = launch {
                 delay(MAX_SESSION_MS)
                 capturing = false
             }
             val result = try {
-                transcriber.transcribe(stillRecording = { capturing })
+                transcriber.transcribe(stillRecording = { capturing }, midSentence = midSentence)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -131,25 +133,39 @@ class DictationManager(private val ime: InputMethodService) {
                 return@launch
             }
             _state.value = DictationState.WORKING
-            val text = result?.text
-            if (!text.isNullOrBlank()) {
+            val heard = result?.text
+            if (!heard.isNullOrBlank()) {
                 withContext(Dispatchers.Main) {
                     val ic = ime.currentInputConnection
                     if (ic != null) {
                         // Keep a word that was being composed instead of replacing it.
                         ic.finishComposingText()
+                        // Fit it to what is before the cursor: lower-case start mid-sentence, a space
+                        // between it and the previous word (read again now; the cursor may have moved).
+                        val text = DictationCasing.fit(heard, textBeforeCursor(), knownWords())
                         // Where the text goes, read before the edit (many editors still report the
                         // old cursor right after one; see UndoSlot).
                         val at = SovereignUndo.snapshot(ic)?.let { minOf(it.selStart, it.selEnd) }
                         ic.commitText(text, 1)
                         if (at != null) SovereignUndo.dictation.offer(text, at + text.length, at + text.length)
-                        result?.keepId?.let { KeptDictations.remember(it, text) }
+                        result?.keepId?.let { KeptDictations.remember(it, text.trim()) }
                         addToClipboardHistory(text)
                     }
                 }
             }
             _state.value = DictationState.IDLE
         }
+    }
+
+    /** Up to [DictationCasing.CONTEXT_CHARS] characters before the cursor ("" at the start of the field). */
+    private fun textBeforeCursor(): String? = runCatching {
+        ime.currentInputConnection?.getTextBeforeCursor(DictationCasing.CONTEXT_CHARS, 0)?.toString()
+    }.getOrNull()
+
+    /** The user's own words and the server's word list: spellings whose capitals must stay. */
+    private fun knownWords(): Collection<String> {
+        val s = DictationSettings(appContext)
+        return s.wordList + s.serverWords.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     /**
