@@ -126,11 +126,11 @@ class AppUpdater(context: Context) {
 
 /**
  * Whether a newer build is out, for the red "Update available" banner (see [SovereignToken.banner]).
- * Asks the update server at most every few hours, when the keyboard opens or settings are shown; the
+ * Asks the update server (one small request for latest.json) at most every 30 minutes, when the keyboard opens or settings are shown; the
  * answer is remembered, so the banner shows at once next time and goes away when this build is current.
  */
 object SovereignUpdates {
-    private const val CHECK_EVERY_MS = 4 * 60 * 60 * 1000L
+    private const val CHECK_EVERY_MS = 30 * 60 * 1000L
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile private var checking = false
@@ -165,6 +165,8 @@ object SovereignUpdates {
         if (checking) return
         if (abs(System.currentTimeMillis() - DictationSettings(appContext).lastUpdateCheck) < CHECK_EVERY_MS) return
         checking = true
+        // counted from the attempt, so a failing check (offline) isn't repeated on every keyboard open
+        DictationSettings(appContext).lastUpdateCheck = System.currentTimeMillis()
         scope.launch {
             try {
                 onChecked(appContext, AppUpdater(appContext).check())
