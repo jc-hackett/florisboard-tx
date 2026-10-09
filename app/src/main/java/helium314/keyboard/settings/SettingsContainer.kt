@@ -14,6 +14,7 @@ import helium314.keyboard.settings.screens.createGestureTypingSettings
 import helium314.keyboard.settings.screens.createLayoutSettings
 import helium314.keyboard.settings.screens.createPreferencesSettings
 import helium314.keyboard.settings.screens.createToolbarSettings
+import helium314.keyboard.tx.createSovereignSettings // SovereignBoard:
 
 class SettingsContainer(context: Context) {
     private val list = createSettings(context)
@@ -62,7 +63,8 @@ class Setting(
 }
 
 // intentionally not putting individual debug settings in here so user knows the context
-private fun createSettings(context: Context) = createAboutSettings(context) + createAppearanceSettings(context) +
+// SovereignBoard: our entries first, so "privacy", "recordings", "training" find them
+private fun createSettings(context: Context) = createSovereignSettings(context) + createAboutSettings(context) + createAppearanceSettings(context) +
         createCorrectionSettings(context) + createPreferencesSettings(context) + createToolbarSettings(context) +
         createLayoutSettings(context) + createAdvancedSettings(context) +
         if (JniUtils.sHaveGestureLib) createGestureTypingSettings(context) else emptyList()

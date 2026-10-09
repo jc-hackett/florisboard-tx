@@ -44,6 +44,7 @@ fun MainSettingsScreen(
     onClickDictionaries: () -> Unit,
     onClickBack: () -> Unit,
     onClickSovereign: () -> Unit = {}, // SovereignBoard:
+    onClickPrivacy: () -> Unit = {}, // SovereignBoard:
 ) {
     SearchSettingsScreen(
         onClickBack = onClickBack,
@@ -55,12 +56,18 @@ fun MainSettingsScreen(
             Column(
                 Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
             ) {
-                // SovereignBoard: dictation server settings
+                // SovereignBoard: our own screens, at the top
                 Preference(
-                    name = "SovereignBoard",
-                    description = "Keyboard updates, dictation server, AI cleanup, microphone",
+                    name = stringResource(R.string.sovereign_screen_title),
+                    description = stringResource(R.string.sovereign_screen_summary),
                     onClick = onClickSovereign,
                     icon = R.drawable.sym_keyboard_voice_rounded
+                ) { NextScreenIcon() }
+                Preference(
+                    name = stringResource(R.string.sovereign_privacy_title),
+                    description = stringResource(R.string.sovereign_privacy_summary),
+                    onClick = onClickPrivacy,
+                    icon = R.drawable.ic_settings_privacy
                 ) { NextScreenIcon() }
                 Preference(
                     name = stringResource(R.string.language_and_layouts_title),

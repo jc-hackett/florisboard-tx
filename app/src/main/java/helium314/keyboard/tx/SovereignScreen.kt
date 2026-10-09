@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -161,49 +160,13 @@ fun SovereignScreen(onClickBack: () -> Unit) {
         }
     }
 
-    // "Help it learn your voice": opt-in kept recordings on the server.
-    var keepRecordings by remember { mutableStateOf(settings.keepRecordings) }
-    var keptStatus by remember { mutableStateOf("") }
-    var keepBusy by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
-
-    fun keptText(n: Int, fixes: Int) =
-        "${if (n == 1) "1 recording" else "$n recordings"} · ${if (fixes == 1) "1 fix" else "$fixes fixes"} saved"
-
-    fun refreshKept() {
-        if (settings.token.isBlank()) { keptStatus = ""; return }
-        scope.launch {
-            keptStatus = try {
-                KeptRecordings.count(ctx).let { (n, fixes) -> keptText(n, fixes) }
-            } catch (e: DictationException) {
-                "Couldn't check saved recordings: ${e.userMessage}"
-            }
-        }
-    }
-
-    fun deleteKept() {
-        if (keepBusy) return
-        keepBusy = true
-        keptStatus = "Deleting…"
-        scope.launch {
-            try {
-                val n = KeptRecordings.deleteAll(ctx)
-                keptStatus = if (n == 1) "Deleted 1 recording. ${keptText(0, 0)}."
-                    else "Deleted $n recordings. ${keptText(0, 0)}."
-            } catch (e: DictationException) {
-                keptStatus = "Couldn't delete: ${e.userMessage}"
-            } finally {
-                keepBusy = false
-            }
-        }
-    }
+    // "Help it learn your voice" moved to PrivacyScreen ("AI training & privacy").
 
     installUpdateRef = ::installUpdate
 
     LaunchedEffect(Unit) {
         SovereignToken.checkIfDue(ctx)
         checkForUpdate()
-        refreshKept()
     }
 
     // Opened from the red "Update available" banner: start the install (after the check, if needed).
@@ -376,43 +339,6 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                 var clipCheck by remember { mutableStateOf(ClipboardCheck.summary(ctx)) }
                 Text(clipCheck, style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { clipCheck = ClipboardCheck.summary(ctx) }) { Text("Refresh") }
-
-                Text("Help it learn your voice", style = MaterialTheme.typography.titleMedium)
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Save my recordings to train on my voice", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Your recordings are kept encrypted on Jeremiah's server and used only to make " +
-                                "recognition better for you. Turn off any time.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Switch(
-                        checked = keepRecordings,
-                        onCheckedChange = { keepRecordings = it; settings.keepRecordings = it },
-                    )
-                }
-                if (keptStatus.isNotEmpty()) {
-                    Text(keptStatus, style = MaterialTheme.typography.bodyMedium)
-                }
-                OutlinedButton(
-                    onClick = { confirmDelete = true },
-                    enabled = !keepBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Delete my recordings") }
-                if (confirmDelete) {
-                    AlertDialog(
-                        onDismissRequest = { confirmDelete = false },
-                        title = { Text("Delete my recordings?") },
-                        text = { Text("This deletes every recording saved on the server for you. It can't be undone.") },
-                        confirmButton = {
-                            TextButton(onClick = { confirmDelete = false; deleteKept() }) { Text("Delete") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
-                        },
-                    )
-                }
 
                 Text("AI cleanup", style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

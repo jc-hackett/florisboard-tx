@@ -35,6 +35,7 @@ import helium314.keyboard.settings.screens.ToolbarScreen
 import helium314.keyboard.settings.screens.gesturedata.GestureDataScreen
 import helium314.keyboard.settings.screens.gesturedata.ReviewScreen
 import helium314.keyboard.tx.SovereignScreen // SovereignBoard:
+import helium314.keyboard.tx.PrivacyScreen // SovereignBoard:
 import helium314.keyboard.tx.WithTokenBanner // SovereignBoard:
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,11 +84,15 @@ fun SettingsNavHost(
                 onClickDictionaries = { navController.navigate(SettingsDestination.Dictionaries) },
                 onClickBack = ::goBack,
                 onClickSovereign = { navController.navigate(SettingsDestination.Sovereign) }, // SovereignBoard:
+                onClickPrivacy = { navController.navigate(SettingsDestination.Privacy) }, // SovereignBoard:
             )
             } // SovereignBoard: WithTokenBanner
         }
         composable(SettingsDestination.Sovereign) { // SovereignBoard:
             WithTokenBanner(onOpenSovereign = {}) { SovereignScreen(onClickBack = ::goBack) }
+        }
+        composable(SettingsDestination.Privacy) { // SovereignBoard: AI training & privacy
+            PrivacyScreen(onClickBack = ::goBack)
         }
         composable(SettingsDestination.About) {
             AboutScreen(onClickBack = ::goBack)
@@ -173,6 +178,7 @@ object SettingsDestination {
     const val Layouts = "layouts"
     const val Dictionaries = "dictionaries"
     const val Sovereign = "sovereign" // SovereignBoard:
+    const val Privacy = "sovereign_privacy" // SovereignBoard:
     val navTarget = MutableStateFlow(Settings)
 
     private val navScope = CoroutineScope(Dispatchers.Default)

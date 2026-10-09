@@ -82,5 +82,14 @@
     <string name="sovereign_whats_new_summary" translatable="false">Changes in each version</string>
     <string name="sovereign_source" translatable="false">Source code</string>
     <string name="sovereign_source_summary" translatable="false">"SovereignBoard's code on GitHub"</string>
+    <!-- SovereignBoard: main settings entries and settings search (SovereignBoard + AI training & privacy) -->
+    <string name="sovereign_screen_title" translatable="false">SovereignBoard</string>
+    <string name="sovereign_screen_summary" translatable="false">Updates, access key, dictation, ✨, colours, glide typing</string>
+    <string name="sovereign_privacy_title" translatable="false">AI training &amp; privacy</string>
+    <string name="sovereign_privacy_summary" translatable="false">Voice recordings, what leaves your phone, privacy page</string>
+    <string name="sovereign_keep_recordings" translatable="false">Save my recordings to train on my voice</string>
+    <string name="sovereign_keep_recordings_summary" translatable="false">Voice training and saved recordings (AI training and privacy)</string>
+    <string name="sovereign_delete_recordings" translatable="false">Delete my recordings</string>
+    <string name="sovereign_delete_recordings_summary" translatable="false">Remove every recording saved on the server (privacy)</string>
 
 </resources>
