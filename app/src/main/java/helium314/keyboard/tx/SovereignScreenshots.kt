@@ -281,6 +281,50 @@ object SovereignScreenshots {
         return null
     }
 
+    /** A screenshot fact check can offer: the newest one from the last three minutes, with a thumbnail. */
+    class FreshShot(val uri: Uri, val thumb: Bitmap?)
+
+    /**
+     * For fact check: the newest screenshot taken in the last three minutes, whether or not its chip was
+     * used or dismissed. Needs photo access (not the "Offer recent screenshots" switch). Call off the main thread.
+     */
+    fun freshForFactCheck(context: Context): FreshShot? {
+        if (!hasAccess(context)) return null
+        val q = runCatching { findRecent(context, RECENT_MS, 1) }.getOrNull()?.firstOrNull() ?: return null
+        return FreshShot(q.second, thumbnail(context, q.second))
+    }
+
+    fun hasPhotoAccess(context: Context) = hasAccess(context)
+
+    /**
+     * The screenshot ready to send: longest side at most [maxSide] px, as JPEG. In memory only - nothing is
+     * written to disk. Call off the main thread. Null if it can't be read.
+     */
+    fun jpegForUpload(context: Context, uri: Uri, maxSide: Int = 1568, quality: Int = 80): ByteArray? = runCatching {
+        val cr = context.contentResolver
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return@runCatching null
+        var sample = 1
+        while (maxOf(w, h) / (sample * 2) >= maxSide) sample *= 2 // decode no bigger than needed
+        val decoded = cr.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: return@runCatching null
+        val long = maxOf(decoded.width, decoded.height)
+        val scaled = if (long > maxSide) {
+            val f = maxSide.toFloat() / long
+            Bitmap.createScaledBitmap(decoded, Math.round(decoded.width * f).coerceAtLeast(1),
+                Math.round(decoded.height * f).coerceAtLeast(1), true)
+        } else decoded
+        if (scaled !== decoded) decoded.recycle()
+        val out = java.io.ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        scaled.recycle()
+        out.toByteArray()
+    }.onFailure { Log.w(TAG, "could not read screenshot for fact check", it) }.getOrNull()
+
     private fun thumbnail(context: Context, uri: Uri): Bitmap? = runCatching {
         if (Build.VERSION.SDK_INT >= 29) {
             context.contentResolver.loadThumbnail(uri, Size(240, 240), null)

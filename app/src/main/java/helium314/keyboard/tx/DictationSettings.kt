@@ -100,6 +100,11 @@ class DictationSettings(context: Context) {
         get() = prefs.getBoolean(KEY_FACT_CHECK_NOTE, false)
         set(value) = prefs.edit().putBoolean(KEY_FACT_CHECK_NOTE, value).apply()
 
+    /** The note has been seen since it gained the screenshot warning (shown again once to earlier users). */
+    var factCheckShotNoteSeen: Boolean
+        get() = prefs.getBoolean(KEY_FACT_CHECK_SHOT_NOTE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FACT_CHECK_SHOT_NOTE, value).apply()
+
     companion object {
         private const val FILE = "dictation"
         private const val KEY_TOKEN_CHANGED_PENDING = "token_changed_pending"
@@ -108,6 +113,7 @@ class DictationSettings(context: Context) {
         private const val KEY_UPDATE_BUILD = "update_build"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         private const val KEY_FACT_CHECK_NOTE = "fact_check_note_seen"
+        private const val KEY_FACT_CHECK_SHOT_NOTE = "fact_check_shot_note_seen"
         private const val KEY_TOKEN_REJECTED = "token_rejected"
         private const val KEY_SERVER_WORDS = "server_words"
         private const val KEY_LAST_TOKEN_CHECK = "last_token_check"
