@@ -19,7 +19,19 @@ class DictationSettings(context: Context) {
 
     var token: String
         get() = prefs.getString(KEY_TOKEN, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_TOKEN, value.trim()).apply()
+        set(value) {
+            val edit = prefs.edit().putString(KEY_TOKEN, value.trim())
+            if (value.trim() != token) edit.remove(KEY_DEV_TOKEN) // a dev token belongs to one person's key
+            edit.apply()
+        }
+
+    /**
+     * Developer mode's dev token from POST /v1/dev/unlock (empty = locked). Sent as X-Dev-Token with
+     * screenshot fact checks; the server decides whether it is still good. Never the PIN itself.
+     */
+    var devToken: String
+        get() = prefs.getString(KEY_DEV_TOKEN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_DEV_TOKEN, value.trim()).apply()
 
     /** The user's own words (names, jargon), one per line, sent with each dictation. */
     var words: String
@@ -122,6 +134,7 @@ class DictationSettings(context: Context) {
         const val DEFAULT_SERVER = "https://dictate.limn.dev"
         private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
+        private const val KEY_DEV_TOKEN = "dev_token"
         private const val KEY_WORDS = "words"
         private const val KEY_AUTO_CLEANUP = "auto_cleanup_on_period"
         const val MAX_WORDS = 200

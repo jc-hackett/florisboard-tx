@@ -53,7 +53,8 @@ import java.net.URL
  * bullets and the sources (tap to open). Insert puts a one-line summary at the cursor; Copy copies
  * the whole answer; Close, the X or Back brings the keys back.
  *
- * Screenshots: if one was taken in the last three minutes (and photo access is granted), the panel
+ * Screenshots (developer mode only, see [DeveloperMode]; otherwise fact check is text-only and shows
+ * no screenshot choice or tip): if one was taken in the last three minutes (and photo access is granted), the panel
  * first asks "Check your screenshot or your text?" - the screenshot (downscaled to 1568 px, JPEG, in
  * memory only) lets Claude check the whole conversation, including what other people wrote. Without
  * one, the panel shows a tip to take a screenshot first.
@@ -90,10 +91,14 @@ object FactCheck {
             val after = ic.getTextAfterCursor(MAX_READ, 0)?.toString().orEmpty()
             (before.substringAfterLast('\n') + after.substringBefore('\n')).trim()
         }
+        // Screenshot checks are a developer feature (unlocked with the PIN in Settings, SovereignBoard;
+        // the server enforces it). Without developer mode, fact check is the text-only version.
+        val dev = DeveloperMode.isOn(settings)
         job?.cancel()
         job = scope.launch {
             val ctx = ime.applicationContext
-            val shot = withContext(Dispatchers.IO) { runCatching { SovereignScreenshots.freshForFactCheck(ctx) }.getOrNull() }
+            val shot = if (!dev) null
+                else withContext(Dispatchers.IO) { runCatching { SovereignScreenshots.freshForFactCheck(ctx) }.getOrNull() }
             if (shot == null) {
                 if (text.isEmpty()) return@launch toast(ime, "Fact check: nothing to check. Type or select some text first.")
                 if (text.length > SEND_MAX)
@@ -104,7 +109,7 @@ object FactCheck {
             panel = p
             val proceed = {
                 if (shot == null) {
-                    p.showTip(SovereignScreenshots.hasPhotoAccess(ctx))
+                    if (dev) p.showTip(SovereignScreenshots.hasPhotoAccess(ctx))
                     start(p, text, null)
                 } else {
                     val textOk = text.isNotEmpty() && text.length <= SEND_MAX
@@ -113,8 +118,11 @@ object FactCheck {
                         onText = { start(p, text, null) })
                 }
             }
-            if (settings.factCheckNoteSeen && settings.factCheckShotNoteSeen) proceed()
-            else p.showNote { settings.factCheckNoteSeen = true; settings.factCheckShotNoteSeen = true; proceed() }
+            if (!dev) {
+                if (settings.factCheckNoteSeen) proceed()
+                else p.showNote(withScreenshots = false) { settings.factCheckNoteSeen = true; proceed() }
+            } else if (settings.factCheckNoteSeen && settings.factCheckShotNoteSeen) proceed()
+            else p.showNote(withScreenshots = true) { settings.factCheckNoteSeen = true; settings.factCheckShotNoteSeen = true; proceed() }
         }
     }
 
@@ -187,6 +195,7 @@ object FactCheck {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setFixedLengthStreamingMode(bytes.size)
+            if (image != null) setRequestProperty("X-Dev-Token", settings.devToken)
         }
         try {
             conn.outputStream.use { it.write(bytes) }
@@ -195,6 +204,12 @@ object FactCheck {
                 val reason = runCatching {
                     JSONObject(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "{}").optString("detail")
                 }.getOrDefault("")
+                // 403 on a screenshot = the server no longer accepts developer mode here (bad key is 401)
+                if (code == 403 && image != null) {
+                    settings.devToken = ""
+                    throw CheckFailed("Screenshot check is a developer feature. Developer mode is now locked; " +
+                        "unlock it again in Settings, SovereignBoard.")
+                }
                 throw CheckFailed(when (code) {
                     401, 403 -> { SovereignToken.onRejected(context); "The server didn't accept your access token." }
                     413 -> if (image != null) "That screenshot is too big to check."
@@ -280,11 +295,13 @@ object FactCheck {
             setActionsEnabled(false)
         }
 
-        fun showNote(onOk: () -> Unit) {
+        fun showNote(withScreenshots: Boolean, onOk: () -> Unit) {
             body.removeAllViews()
-            body.addView(text("Fact check sends your text or screenshot to Claude with web search. Names aren't hidden — " +
+            body.addView(text(if (withScreenshots) "Fact check sends your text or screenshot to Claude with web search. Names aren't hidden — " +
                     "don't use it for client details. Screenshots can show other people's messages and names — " +
-                    "don't use this on client conversations.", 15f, textColor).apply { setPadding(0, dp(10), 0, dp(12)) })
+                    "don't use this on client conversations."
+                else "Fact check sends this text to Claude with web search. Names aren't hidden — " +
+                    "don't use it for client details.", 15f, textColor).apply { setPadding(0, dp(10), 0, dp(12)) })
             body.addView(button("OK", primary = true) { onOk() }, LinearLayout.LayoutParams(dp(120), dp(44)))
         }
 

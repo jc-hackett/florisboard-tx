@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +68,8 @@ import helium314.keyboard.latin.utils.JniUtils
 import helium314.keyboard.settings.SearchSettingsScreen
 import helium314.keyboard.latin.utils.prefs
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SovereignScreen(onClickBack: () -> Unit) {
@@ -413,8 +416,106 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     onClick = { openAppSettings(ctx) },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Open app permissions") }
+
+                DeveloperModeRow(settings)
             }
         }
+    }
+}
+
+/**
+ * "Developer mode": unlocks the screenshot fact check. The PIN goes to the server (POST /v1/dev/unlock),
+ * which only says yes to someone marked "developer" on its admin page; the phone keeps the dev token
+ * it gets back, never the PIN. Lock forgets the token.
+ */
+@Composable
+private fun DeveloperModeRow(settings: DictationSettings) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(DeveloperMode.isOn(settings)) }
+    var asking by remember { mutableStateOf(false) }
+
+    Text("Developer", style = MaterialTheme.typography.titleMedium)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = !on) { asking = true }
+            .padding(vertical = 4.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(if (on) "Developer mode — On" else "Developer mode — Locked", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (on) "Screenshot fact check is unlocked on this phone."
+                else "For the developer. Tap to enter the PIN.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (on) {
+            OutlinedButton(onClick = {
+                on = false
+                scope.launch {
+                    withContext(Dispatchers.IO) { DeveloperMode.lock(settings) }
+                    Toast.makeText(ctx, "Developer mode locked", Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("Lock") }
+        }
+    }
+    if (asking) {
+        var pin by remember { mutableStateOf("") }
+        var busy by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        val focus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { delay(200); runCatching { focus.requestFocus() } }
+        fun submit() {
+            if (busy || pin.isBlank()) return
+            busy = true
+            error = null
+            scope.launch {
+                val outcome = withContext(Dispatchers.IO) {
+                    runCatching { DeveloperMode.unlock(settings, pin) }
+                        .getOrElse { DeveloperMode.Outcome.Failed("Couldn't reach the server. Check your connection.") }
+                }
+                busy = false
+                when (outcome) {
+                    DeveloperMode.Outcome.Unlocked -> {
+                        on = true
+                        asking = false
+                        Toast.makeText(ctx, "Developer mode on", Toast.LENGTH_SHORT).show()
+                    }
+                    DeveloperMode.Outcome.WrongPin -> { error = "Wrong PIN"; pin = "" }
+                    DeveloperMode.Outcome.TooManyTries -> { error = "Too many tries, try later"; pin = "" }
+                    is DeveloperMode.Outcome.Failed -> error = outcome.message
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { if (!busy) asking = false },
+            title = { Text("Developer PIN") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { v -> pin = v.filter { it.isDigit() }.take(12); error = null },
+                        label = { Text("PIN") },
+                        singleLine = true,
+                        enabled = !busy,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        isError = error != null,
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    )
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { submit() }, enabled = !busy && pin.isNotBlank()) {
+                    Text(if (busy) "Checking…" else "Unlock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { asking = false }, enabled = !busy) { Text("Cancel") }
+            },
+        )
     }
 }
 
