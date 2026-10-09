@@ -142,12 +142,19 @@ class DictationManager(private val ime: InputMethodService) {
                         ic.finishComposingText()
                         // Fit it to what is before the cursor: lower-case start mid-sentence, a space
                         // between it and the previous word (read again now; the cursor may have moved).
-                        val text = DictationCasing.fit(heard, textBeforeCursor(), knownWords())
+                        val before = textBeforeCursor()
+                        val text = DictationCasing.fit(heard, before, knownWords())
                         // Where the text goes, read before the edit (many editors still report the
                         // old cursor right after one; see UndoSlot).
                         val at = SovereignUndo.snapshot(ic)?.let { minOf(it.selStart, it.selEnd) }
                         ic.commitText(text, 1)
                         if (at != null) SovereignUndo.dictation.offer(text, at + text.length, at + text.length)
+                        // Every dictation comes back already cleaned up, so ✨ turns straight into
+                        // its undo: one tap puts back exactly what was heard.
+                        val raw = result?.raw?.let { DictationCasing.fit(it, before, knownWords()) }
+                        if (at != null && raw != null && raw != text) {
+                            SovereignUndo.cleanup.offer(CleanupDone(at, text, raw), at + text.length, at + text.length)
+                        }
                         result?.keepId?.let { KeptDictations.remember(it, text.trim()) }
                         addToClipboardHistory(text)
                     }

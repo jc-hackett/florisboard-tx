@@ -35,7 +35,7 @@ class DictationException(val userMessage: String) : Exception(userMessage)
  * One finished dictation: the [text] to type in, and [keepId], the server's id for the saved
  * recording when "Save my recordings" is on (null otherwise).
  */
-data class Transcript(val text: String, val keepId: String? = null)
+data class Transcript(val text: String, val keepId: String? = null, val raw: String? = null)
 
 /** Turns captured speech into text ready to be committed to the editor. */
 interface Transcriber {
@@ -174,7 +174,9 @@ class ServerTranscriber(context: Context) : Transcriber {
             val text = reply.optString("text").trim()
             // Only sent back when the server kept this recording (opt-in): its id, for fix labels.
             val keepId = reply.optString("keep_id").takeIf { keep && KEEP_ID.matches(it) }
-            return if (text.isEmpty()) null else Transcript("$text ", keepId)
+            // What was heard before the server's cleanup, so ✨ can offer to put it back.
+            val raw = reply.optString("raw").trim().takeIf { it.isNotEmpty() && it != text }
+            return if (text.isEmpty()) null else Transcript("$text ", keepId, raw?.let { "$it " })
         } catch (e: DictationException) {
             throw e
         } catch (e: CancellationException) {
