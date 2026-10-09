@@ -86,6 +86,7 @@ fun SovereignScreen(onClickBack: () -> Unit) {
     var words by remember { mutableStateOf(settings.words) }
     var autoSparkle by remember { mutableStateOf(settings.autoCleanupOnPeriod) }
     var copyDictation by remember { mutableStateOf(settings.addToClipboardHistory) }
+    var phoneMic by remember { mutableStateOf(settings.usePhoneMic) }
     var offerShots by remember { mutableStateOf(settings.offerScreenshots) }
     var shotAccess by remember { mutableStateOf(screenshotAccessText(ctx)) }
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -290,6 +291,20 @@ fun SovereignScreen(onClickBack: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Save") }
+
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Always use the phone's microphone", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Ignore Bluetooth and headset mics; the phone's own mic is clearer.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = phoneMic,
+                        onCheckedChange = { phoneMic = it; settings.usePhoneMic = it },
+                    )
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {

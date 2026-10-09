@@ -7,7 +7,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.core.content.ContextCompat
@@ -61,6 +65,7 @@ class ServerTranscriber(context: Context) : Transcriber {
         val token = settings.token
         val words = settings.wordList
         val keep = settings.keepRecordings
+        val phoneMic = settings.usePhoneMic
         if (server.isBlank() || token.isBlank()) throw DictationException(DictationMessages.NOT_SET_UP)
         if (!server.startsWith("https://")) throw DictationException(DictationMessages.NOT_HTTPS)
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO)
@@ -76,7 +81,7 @@ class ServerTranscriber(context: Context) : Transcriber {
                 val chunks = Channel<ByteArray>(Channel.UNLIMITED)
                 val upload = async { stream(server, token, words, keep, midSentence, chunks) }
                 val recorded = try {
-                    record(stillRecording) { chunks.trySend(it) }
+                    record(stillRecording, phoneMic) { chunks.trySend(it) }
                 } finally {
                     chunks.close()
                 }
@@ -90,7 +95,7 @@ class ServerTranscriber(context: Context) : Transcriber {
     }
 
     @SuppressLint("MissingPermission") // checked in transcribe()
-    private suspend fun record(stillRecording: () -> Boolean, onChunk: (ByteArray) -> Unit): Int {
+    private suspend fun record(stillRecording: () -> Boolean, phoneMic: Boolean, onChunk: (ByteArray) -> Unit): Int {
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
@@ -104,11 +109,23 @@ class ServerTranscriber(context: Context) : Transcriber {
             recorder.release()
             throw DictationException(DictationMessages.MICROPHONE_BUSY)
         }
+        // "Always use the phone's microphone": pin this recorder to the built-in mic. Only a
+        // preferred device on this one AudioRecord; Bluetooth SCO is never started and the audio
+        // mode is left alone. When off, Android's default routing applies.
+        if (phoneMic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val builtIn = builtInMic()
+            val ok = builtIn != null && recorder.setPreferredDevice(builtIn)
+            if (!ok) Log.i(TAG, "built-in mic not pinned (found=${builtIn != null}); default routing")
+        }
         val chunk = ByteArray(SAMPLE_RATE * BYTES_PER_SAMPLE / 10)
         var total = 0
         val ctx = currentCoroutineContext()
         try {
             recorder.startRecording()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val dev = recorder.routedDevice
+                Log.i(TAG, "recording from device type=${dev?.type} phoneMic=$phoneMic")
+            }
             while (stillRecording()) {
                 ctx.ensureActive()
                 val n = recorder.read(chunk, 0, chunk.size)
@@ -123,6 +140,14 @@ class ServerTranscriber(context: Context) : Transcriber {
             recorder.release()
         }
         return total
+    }
+
+    /** The phone's own microphone, if the system lists one. */
+    private fun builtInMic(): AudioDeviceInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        val am = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return null
+        return am.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
     }
 
     private suspend fun stream(
@@ -197,6 +222,7 @@ class ServerTranscriber(context: Context) : Transcriber {
     }
 
     companion object {
+        private const val TAG = "SovereignMic"
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SAMPLE = 2
         /** Clips shorter than this (in tenths of a second) are treated as accidental presses. */

@@ -68,6 +68,14 @@ class DictationSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_TOKEN_CHECK, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_TOKEN_CHECK, value).apply()
 
+    /**
+     * Record from the phone's own microphone even when Bluetooth or wired headphones with a mic are
+     * connected. On by default: the built-in mic is clearer, and Bluetooth SCO is never started.
+     */
+    var usePhoneMic: Boolean
+        get() = prefs.getBoolean(KEY_USE_PHONE_MIC, true)
+        set(value) = prefs.edit().putBoolean(KEY_USE_PHONE_MIC, value).apply()
+
     /** Offer the newest screenshot (under 3 minutes old) as a chip in the suggestion strip. */
     var offerScreenshots: Boolean
         get() = prefs.getBoolean(KEY_OFFER_SCREENSHOTS, true)
@@ -95,6 +103,7 @@ class DictationSettings(context: Context) {
     companion object {
         private const val FILE = "dictation"
         private const val KEY_TOKEN_CHANGED_PENDING = "token_changed_pending"
+        private const val KEY_USE_PHONE_MIC = "use_phone_mic"
         private const val KEY_OFFER_SCREENSHOTS = "offer_screenshots"
         private const val KEY_UPDATE_BUILD = "update_build"
         private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
